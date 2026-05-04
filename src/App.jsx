@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 
 const DAYS = ["SEG", "TER", "QUA", "QUI", "SEX"];
 const DAY_LABELS = { SEG: "Segunda", TER: "Terça", QUA: "Quarta", QUI: "Quinta", SEX: "Sexta" };
@@ -124,10 +124,23 @@ function SubCard({ s, accent, border, onEdit, onDelete, pending, autoCreated }) 
 export default function App() {
   const [tab, setTab] = useState("subs");
   const [activeDay, setActiveDay] = useState("SEG");
-  const [subs, setSubs] = useState(initialSubstitutions);
-  const [freeSlots, setFreeSlots] = useState(initialFreeSlots);
+
+  // Lendo do Local Save ao abrir o app
+  const [subs, setSubs] = useState(() => {
+    const saved = localStorage.getItem("gestor_subs");
+    return saved ? JSON.parse(saved) : initialSubstitutions;
+  });
+
+  const [freeSlots, setFreeSlots] = useState(() => {
+    const saved = localStorage.getItem("gestor_freeSlots");
+    return saved ? JSON.parse(saved) : initialFreeSlots;
+  });
+
   // therapistSchedules stores occupied slots per day: { SEG:[{therapist,child,time}], ... }
-  const [therapistSchedules, setTherapistSchedules] = useState({ SEG:[], TER:[], QUA:[], QUI:[], SEX:[] });
+  const [therapistSchedules, setTherapistSchedules] = useState(() => {
+    const saved = localStorage.getItem("gestor_schedules");
+    return saved ? JSON.parse(saved) : { SEG:[], TER:[], QUA:[], QUI:[], SEX:[] };
+  });
 
   const [showSubModal, setShowSubModal] = useState(false);
   const [showSlotModal, setShowSlotModal] = useState(false);
@@ -143,8 +156,17 @@ export default function App() {
 
   // ── Absences ──
   // absences: { SEG: ["Leticia Alves", "Cassio"], TER: [], ... }
-  const [absences, setAbsences] = useState({ SEG:[], TER:[], QUA:[], QUI:[], SEX:[] });
+  const [absences, setAbsences] = useState(() => {
+    const saved = localStorage.getItem("gestor_absences");
+    return saved ? JSON.parse(saved) : { SEG:[], TER:[], QUA:[], QUI:[], SEX:[] };
+  });
   const [absenceDay, setAbsenceDay] = useState("SEG");
+
+  // Gravando no Local Save automaticamente toda vez que algo mudar
+  useEffect(() => { localStorage.setItem("gestor_subs", JSON.stringify(subs)); }, [subs]);
+  useEffect(() => { localStorage.setItem("gestor_freeSlots", JSON.stringify(freeSlots)); }, [freeSlots]);
+  useEffect(() => { localStorage.setItem("gestor_schedules", JSON.stringify(therapistSchedules)); }, [therapistSchedules]);
+  useEffect(() => { localStorage.setItem("gestor_absences", JSON.stringify(absences)); }, [absences]);
 
   // All known therapist names from freeSlots
   const allTherapists = [...new Set(
