@@ -1,19 +1,9 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <title>Gestor de Escalas</title>
-        <link rel="manifest" href="/manifest.json">
-        </head>
-        <body>
-          <div id="root"></div>
-            <script type="module" src="/src/index.jsx"></script>
-              <script>
-                  if ('serviceWorker' in navigator) {
-                        navigator.serviceWorker.register('/sw.js');
-                            }
-                              </script>
-                              </body>
-                              </html>
-                              
+import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App.jsx'
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+)
