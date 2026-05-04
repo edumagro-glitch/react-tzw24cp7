@@ -247,12 +247,11 @@ export default function App() {
     setUploadPreview(null);
 
     try {
-      const imageContents = await Promise.all(
+      const imageParts = await Promise.all(
         Array.from(files).map(async file => {
           const b64 = await toBase64(file);
-          // Normalise media type — jpeg files often report "image/jpeg"
           const mt = file.type && file.type !== "" ? file.type : (file.name.match(/\.jpe?g$/i) ? "image/jpeg" : "image/png");
-          return { type:"image", source:{ type:"base64", media_type:mt, data:b64 } };
+          return { inlineData: { data: b64, mimeType: mt } };
         })
       );
 
@@ -300,26 +299,31 @@ Regras finais:
 - occupiedSlots: para cada terapeuta, os horarios em que ele ESTA ATENDENDO um paciente (nao livre, nao AT, nao linha preta). Formato: {"SEG":[{"time":"08:00","child":"Nome Paciente"}], ...}
 - NUNCA escreva texto fora do JSON`;
 
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      if (!apiKey) throw new Error("Chave de API da IA não encontrada nas configurações.");
+
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model:"claude-sonnet-4-20250514",
-          max_tokens:4000,
-          system: systemPrompt,
-          messages:[{ role:"user", content:[
-            ...imageContents,
-            { type:"text", text:`Analise as ${files.length} imagem(ns). Identifique terapeutas e pacientes, aplique todas as regras e retorne o JSON completo.` }
-          ]}]
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents: [{
+            role: "user",
+            parts: [
+              ...imageParts,
+              { text: `Analise as ${files.length} imagem(ns). Identifique terapeutas e pacientes, aplique todas as regras e retorne o JSON completo.` }
+            ]
+          }],
+          generationConfig: { temperature: 0.1 }
         })
       });
 
       const data = await response.json();
 
-      if (data.error) throw new Error(`API: ${data.error.type} — ${data.error.message}`);
-      if (!data.content || data.content.length === 0) throw new Error(`Resposta vazia. Stop reason: ${data.stop_reason}`);
+      if (data.error) throw new Error(`API: ${data.error.message}`);
+      if (!data.candidates || data.candidates.length === 0) throw new Error(`Resposta vazia da IA.`);
 
-      const rawText = data.content.map(i=>i.text||"").join("");
+      const rawText = data.candidates[0].content.parts[0].text;
 
       // Detect case where only patient agendas were uploaded (no therapist agendas)
       const lower = rawText.toLowerCase();
