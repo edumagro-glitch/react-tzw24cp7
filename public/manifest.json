@@ -1,38 +1,9 @@
 {
-    "name": "Gestor Inteligente de Escalas",
       "short_name": "Gestor",
-        "description": "Aplicativo para gestão inteligente de escalas clínicas, controle de terapeutas e pacientes.",
-          "start_url": "/",
-            "display": "standalone",
-              "orientation": "portrait",
-                "background_color": "#ffffff",
-                  "theme_color": "#1e293b",
-                    "icons": [
-                        {
-                              "src": "https://raw.githubusercontent.com/pwa-builder/pwa-starter/main/public/assets/icon-192.png",
-                                    "sizes": "192x192",
-                                          "type": "image/png",
-                                                "purpose": "any"
-                                                    },
-                                                        {
-                                                              "src": "https://raw.githubusercontent.com/pwa-builder/pwa-starter/main/public/assets/icon-512.png",
-                                                                    "sizes": "512x512",
-                                                                          "type": "image/png",
-                                                                                "purpose": "maskable"
-                                                                                    }
-                                                                                      ],
-                                                                                        "screenshots": [
-                                                                                            {
-                                                                                                  "src": "https://raw.githubusercontent.com/pwa-builder/pwa-starter/main/public/assets/screenshot.png",
-                                                                                                        "sizes": "1280x720",
-                                                                                                              "type": "image/png",
-                                                                                                                    "form_factor": "wide"
-                                                                                                                        },
-                                                                                                                            {
-                                                                                                                                  "src": "https://raw.githubusercontent.com/pwa-builder/pwa-starter/main/public/assets/screenshot.png",
-                                                                                                                                        "sizes": "720x1280",
-                                                                                                                                              "type": "image/png",
-                                                                                                                                                    "form_factor": "narrow"
-                                                                                                                                                        }
-                                                                                                                                                          ]
-                                                                                                                                                          }
+      "name": "Gestor de Escalas",
+      "start_url": ".",
+      "display": "standalone",
+      "theme_color": "#0a0e14",
+      "background_color": "#0a0e14",
+      "icons": []
+    }
