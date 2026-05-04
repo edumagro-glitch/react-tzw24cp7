@@ -1,22 +1,40 @@
 {
-    "name": "O Meu Gestor",
+    "name": "Gestor Inteligente de Escalas",
       "short_name": "Gestor",
-        "start_url": "/",
-          "display": "standalone",
-            "background_color": "#ffffff",
-              "theme_color": "#000000",
-                "icons": [
-                    {
-                          "src": "https://www.pwabuilder.com/assets/icons/icon_192.png",
-                                "sizes": "192x192",
-                                      "type": "image/png"
-                                          },
-                                              {
-                                                    "src": "https://www.pwabuilder.com/assets/icons/icon_512.png",
-                                                          "sizes": "512x512",
-                                                                "type": "image/png"
-                                                                    }
-                                                                      ]
-                                                                      }
-                                                                      
+        "description": "Aplicativo para gestão inteligente de escalas clínicas, controle de terapeutas e pacientes.",
+          "start_url": "/",
+            "display": "standalone",
+              "orientation": "portrait",
+                "background_color": "#ffffff",
+                  "theme_color": "#1e293b",
+                    "icons": [
+                        {
+                              "src": "https://raw.githubusercontent.com/pwa-builder/pwa-starter/main/public/assets/icon-192.png",
+                                    "sizes": "192x192",
+                                          "type": "image/png",
+                                                "purpose": "any"
+                                                    },
+                                                        {
+                                                              "src": "https://raw.githubusercontent.com/pwa-builder/pwa-starter/main/public/assets/icon-512.png",
+                                                                    "sizes": "512x512",
+                                                                          "type": "image/png",
+                                                                                "purpose": "maskable"
+                                                                                    }
+                                                                                      ],
+                                                                                        "screenshots": [
+                                                                                            {
+                                                                                                  "src": "https://raw.githubusercontent.com/pwa-builder/pwa-starter/main/public/assets/screenshot.png",
+                                                                                                        "sizes": "1280x720",
+                                                                                                              "type": "image/png",
+                                                                                                                    "form_factor": "wide"
+                                                                                                                        },
+                                                                                                                            {
+                                                                                                                                  "src": "https://raw.githubusercontent.com/pwa-builder/pwa-starter/main/public/assets/screenshot.png",
+                                                                                                                                        "sizes": "720x1280",
+                                                                                                                                              "type": "image/png",
+                                                                                                                                                    "form_factor": "narrow"
+                                                                                                                                                        }
+                                                                                                                                                          ]
+                                                                                                                                                          }
+                                                                                                                                                          
 }
