@@ -306,34 +306,83 @@ export default function App() {
     const from = bulkForm.timeFrom;
     const to = bulkForm.timeTo;
     const patLower = bulkForm.patient.toLowerCase().trim();
-    // Convert all matching pending subs to designated
-    let matched = false;
-    setSubs(prev => prev.map(s => {
-      if (s.status !== "Pending") return s;
-      if (s.patient.toLowerCase().trim() !== patLower) return s;
-      // Check if sub time overlaps the range (compare HH:MM strings)
-      const t = s.time.replace(/h.*/i,"").padStart(5,"0").substring(0,5);
-      const tFmt = t.includes(":") ? t : t.replace(/(\d{2})(\d{2})/,"$1:$2");
-      const inRange = tFmt >= from && tFmt <= to;
-      if (inRange || s.time.includes("às") || s.time === bulkForm.timeFrom) {
-        matched = true;
-        return { ...s, therapist: bulkForm.therapist, status: "Designated" };
+
+    // Build the time string for the designated entry
+    const timeStr = from === to ? from : `${from} às ${to}`;
+
+    // Check if there are matching pending entries for this patient
+    const hasPending = subs.some(s =>
+      s.status === "Pending" && s.patient.toLowerCase().trim() === patLower
+    );
+
+    if (hasPending) {
+      // Check if there's already a Designated entry for same patient+therapist
+      const existingDesignated = subs.find(s =>
+        s.status === "Designated" &&
+        s.patient.toLowerCase().trim() === patLower &&
+        s.therapist.toLowerCase().trim() === bulkForm.therapist.toLowerCase().trim()
+      );
+
+      if (existingDesignated) {
+        // Merge: extend the time range of the existing designated entry, remove all pending
+        setSubs(prev => {
+          const filtered = prev.filter(s => {
+            if (s.id === existingDesignated.id) return false; // remove old designated (will re-add merged)
+            if (s.status === "Pending" && s.patient.toLowerCase().trim() === patLower) return false; // remove pending
+            return true;
+          });
+          // Build merged time string
+          const existFrom = existingDesignated.time.split(" às ")[0].trim();
+          const existTo = existingDesignated.time.split(" às ").pop().trim();
+          const mergedFrom = existFrom < from ? existFrom : from;
+          const mergedTo = existTo > to ? existTo : to;
+          const mergedTime = mergedFrom === mergedTo ? mergedFrom : `${mergedFrom} às ${mergedTo}`;
+          return [...filtered, { ...existingDesignated, time: mergedTime }];
+        });
+      } else {
+        // Remove all pending for this patient, add one Designated
+        setSubs(prev => {
+          const filtered = prev.filter(s =>
+            !(s.status === "Pending" && s.patient.toLowerCase().trim() === patLower)
+          );
+          return [...filtered, {
+            id: Date.now(),
+            patient: bulkForm.patient,
+            time: timeStr,
+            therapist: bulkForm.therapist,
+            status: "Designated",
+            autoCreated: false
+          }];
+        });
       }
-      return s;
-    }));
-    // If no pending matched, create a single new Designated entry
-    if (!matched) {
-      const timeStr = bulkForm.timeFrom === bulkForm.timeTo
-        ? bulkForm.timeFrom
-        : `${bulkForm.timeFrom} às ${bulkForm.timeTo}`;
-      setSubs(prev => [...prev, {
-        id: Date.now(),
-        patient: bulkForm.patient,
-        time: timeStr,
-        therapist: bulkForm.therapist,
-        status: "Designated"
-      }]);
+    } else {
+      // No pending found — check if same patient+therapist designated already exists to merge
+      const existingDesignated = subs.find(s =>
+        s.status === "Designated" &&
+        s.patient.toLowerCase().trim() === patLower &&
+        s.therapist.toLowerCase().trim() === bulkForm.therapist.toLowerCase().trim()
+      );
+      if (existingDesignated) {
+        setSubs(prev => {
+          const filtered = prev.filter(s => s.id !== existingDesignated.id);
+          const existFrom = existingDesignated.time.split(" às ")[0].trim();
+          const existTo = existingDesignated.time.split(" às ").pop().trim();
+          const mergedFrom = existFrom < from ? existFrom : from;
+          const mergedTo = existTo > to ? existTo : to;
+          const mergedTime = mergedFrom === mergedTo ? mergedFrom : `${mergedFrom} às ${mergedTo}`;
+          return [...filtered, { ...existingDesignated, time: mergedTime }];
+        });
+      } else {
+        setSubs(prev => [...prev, {
+          id: Date.now(),
+          patient: bulkForm.patient,
+          time: timeStr,
+          therapist: bulkForm.therapist,
+          status: "Designated"
+        }]);
+      }
     }
+
     setBulkForm({ patient:"", timeFrom:"08:00", timeTo:"11:00", therapist:"" });
     setShowBulkModal(false);
   };
@@ -395,11 +444,16 @@ TIPO A - TERAPEUTA:
 - Linhas: horarios HH:MM
 - Celulas: nome do paciente, VAZIA, "AT", ou linha com FUNDO PRETO
 
-AGENDA COM COLUNA DUPLA (ESQUERDA / DIREITA):
-- Quando uma celula esta dividida em esquerda e direita (2 pacientes lado a lado), IGNORE a coluna ESQUERDA.
-- Use APENAS a coluna DIREITA: ela representa a substituição JA DESIGNADA para o terapeuta naquele horário.
-- A coluna ESQUERDA é o paciente original que NÃO está sendo atendido (TO, Psicoterapia, etc. do paciente da esquerda já tem cobertura pela direita).
-- Portanto: considere sempre APENAS o nome da célula DIREITA para ocupiedSlots e pendências.
+CELULAS COM BARRA "/" (paciente original / substituto):
+- Quando uma celula contém "NomeA/ NomeB" ou "NomeA/NomeB", significa que NomeA é o paciente ORIGINAL e NomeB é quem está sendo ATENDIDO no lugar dele.
+- Para occupiedSlots do terapeuta: registrar NomeB (o da DIREITA da barra) como paciente atendido.
+- NomeA (ESQUERDA) só é atendido nos horários em que a célula NÃO tem barra (célula simples com apenas NomeA).
+- Exemplo: se 08:00, 08:30, 09:00, 09:30 têm "Davi" simples e 10:00, 10:30, 11:00, 11:30 têm "Davi/ Guilherme", então:
+  - Davi é atendido de 08:00 a 09:30 (horários sem barra)
+  - Guilherme é atendido de 10:00 a 11:30 (horários COM barra, usar o nome APÓS a barra)
+  - Davi NAO é considerado atendido nos horários com barra
+- Para pendencias: usar o nome APÓS a barra (DIREITA) como paciente daquele horário.
+- NUNCA incluir "NomeA/" com a barra no occupiedSlots. Limpar o nome: remover tudo antes e incluindo a barra.
 
 TIPO B - PACIENTE/CRIANCA:
 - Cabecalho: "PACIENTE - NOME"
@@ -434,7 +488,7 @@ Regras finais:
 - absentDays: dias com linha preta
 - Sem agendas de criancas: pendingChildren:[], crossReferences:[]
 - Sem agendas de terapeutas: therapists:[]
-- occupiedSlots: para cada terapeuta, os horarios em que ele ESTA ATENDENDO um paciente (nao livre, nao AT, nao linha preta). Em celulas DUPLAS, usar apenas a DIREITA. Formato: {"SEG":[{"time":"08:00","child":"Nome Paciente"}], ...}
+- occupiedSlots: para cada terapeuta, os horarios em que ele ESTA ATENDENDO um paciente (nao livre, nao AT, nao linha preta). Em celulas com barra "NomeA/ NomeB", registrar APENAS NomeB (pos-barra) como child naquele horario. Celulas sem barra: registrar o nome completo. Formato: {"SEG":[{"time":"08:00","child":"Nome Paciente"}], ...}
 - NUNCA escreva texto fora do JSON`;
 
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
@@ -513,13 +567,25 @@ Regras finais:
 
     // Build therapistSchedules: occupied slots per day (therapist→child mappings)
     const newSchedules = { SEG:[], TER:[], QUA:[], QUI:[], SEX:[] };
+
+    // Helper: extract the real child name from slash notation ("NomeA/ NomeB" → "NomeB")
+    const cleanChildName = (raw) => {
+      if (!raw) return raw;
+      if (raw.includes("/")) {
+        const right = raw.split("/").pop().trim();
+        return right || raw.trim();
+      }
+      return raw.trim();
+    };
+
     therapists.forEach(({ name, freeSlots: fs, occupiedSlots }) => {
       // occupiedSlots may be provided, otherwise we can't reconstruct from freeSlots alone
       // Store what we know from the raw therapist data
       if (occupiedSlots) {
         DAYS.forEach(day => {
           (occupiedSlots[day]||[]).forEach(({ time, child }) => {
-            newSchedules[day].push({ therapist: name, child, time });
+            const cleanChild = cleanChildName(child);
+            if (cleanChild) newSchedules[day].push({ therapist: name, child: cleanChild, time });
           });
         });
       }
@@ -557,8 +623,9 @@ Regras finais:
     if (pendingChildren.length > 0) {
       const grouped = {};
       pendingChildren.forEach(({ child, day, time, activity }) => {
-        const key = `${child}||${day}`;
-        if (!grouped[key]) grouped[key] = { child, day, times:[], activities:[] };
+        const cleanChild = cleanChildName(child);
+        const key = `${cleanChild}||${day}`;
+        if (!grouped[key]) grouped[key] = { child: cleanChild, day, times:[], activities:[] };
         grouped[key].times.push(time);
         grouped[key].activities.push(activity);
       });
