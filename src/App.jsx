@@ -144,10 +144,15 @@ export default function App() {
 
   const [showSubModal, setShowSubModal] = useState(false);
   const [showSlotModal, setShowSlotModal] = useState(false);
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(null); // null | "designated" | "pending" | "all"
   const [editingSub, setEditingSub] = useState(null);
   const [editingSlot, setEditingSlot] = useState(null);
   const [subForm, setSubForm] = useState({ patient:"", time:"", therapist:"", status:"Pending" });
   const [slotForm, setSlotForm] = useState({ time:"13:00", therapist:"" });
+  const [bulkForm, setBulkForm] = useState({ patient:"", timeFrom:"08:00", timeTo:"11:00", therapist:"" });
+  const [childSearch, setChildSearch] = useState("");
+  const [childViewDay, setChildViewDay] = useState("SEG");
 
   const [uploading, setUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState(null);
@@ -242,6 +247,50 @@ export default function App() {
     setShowSubModal(false);
   };
   const deleteSub = id => setSubs(p=>p.filter(s=>s.id!==id));
+
+  const saveBulk = () => {
+    if (!bulkForm.patient || !bulkForm.therapist || !bulkForm.timeFrom || !bulkForm.timeTo) return;
+    const from = bulkForm.timeFrom;
+    const to = bulkForm.timeTo;
+    const patLower = bulkForm.patient.toLowerCase().trim();
+    // Convert all matching pending subs to designated
+    let matched = false;
+    setSubs(prev => prev.map(s => {
+      if (s.status !== "Pending") return s;
+      if (s.patient.toLowerCase().trim() !== patLower) return s;
+      // Check if sub time overlaps the range (compare HH:MM strings)
+      const t = s.time.replace(/h.*/i,"").padStart(5,"0").substring(0,5);
+      const tFmt = t.includes(":") ? t : t.replace(/(\d{2})(\d{2})/,"$1:$2");
+      const inRange = tFmt >= from && tFmt <= to;
+      if (inRange || s.time.includes("às") || s.time === bulkForm.timeFrom) {
+        matched = true;
+        return { ...s, therapist: bulkForm.therapist, status: "Designated" };
+      }
+      return s;
+    }));
+    // If no pending matched, create a single new Designated entry
+    if (!matched) {
+      const timeStr = bulkForm.timeFrom === bulkForm.timeTo
+        ? bulkForm.timeFrom
+        : `${bulkForm.timeFrom} às ${bulkForm.timeTo}`;
+      setSubs(prev => [...prev, {
+        id: Date.now(),
+        patient: bulkForm.patient,
+        time: timeStr,
+        therapist: bulkForm.therapist,
+        status: "Designated"
+      }]);
+    }
+    setBulkForm({ patient:"", timeFrom:"08:00", timeTo:"11:00", therapist:"" });
+    setShowBulkModal(false);
+  };
+
+  const clearSubs = (type) => {
+    if (type === "designated") setSubs(p => p.filter(s => s.status !== "Designated"));
+    else if (type === "pending") setSubs(p => p.filter(s => s.status !== "Pending"));
+    else setSubs([]);
+    setShowClearConfirm(null);
+  };
 
   // ── Free Slots CRUD ──
   const openAddSlot = () => { setEditingSlot(null); setSlotForm({time:"13:00",therapist:""}); setShowSlotModal(true); };
@@ -536,15 +585,16 @@ Regras finais:
             </div>
             <div style={{ display:"flex",gap:"0.4rem" }}>
               {[
-                ["absent", (absences[absenceDay]||[]).length>0 ? `📌 Faltas (${DAYS.reduce((a,d)=>a+(absences[d]||[]).length,0)})` : "📌 Registrar Faltas"],
-                ["upload","📋 Importar Agendas"]
+                ["absent", (absences[absenceDay]||[]).length>0 ? `📌 Faltas (${DAYS.reduce((a,d)=>a+(absences[d]||[]).length,0)})` : "📌 Faltas"],
+                ["children","👶 Crianças"],
+                ["upload","📋 Importar"]
               ].map(([key,label])=>(
                 <button key={key} onClick={()=>setTab(key)} style={{
                   flex:1,padding:"0.55rem 0.4rem",borderRadius:"10px",border:"none",cursor:"pointer",
                   background:tab===key?"#1e2d45":"transparent",
-                  color:tab===key?(key==="absent"?"#f87171":"#3b82f6"):"#6b7a99",
-                  fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.73rem",
-                  borderBottom:tab===key?`2px solid ${key==="absent"?"#dc2626":"#3b82f6"}`:"2px solid transparent"
+                  color:tab===key?(key==="absent"?"#f87171":key==="children"?"#a78bfa":"#3b82f6"):"#6b7a99",
+                  fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.68rem",
+                  borderBottom:tab===key?`2px solid ${key==="absent"?"#dc2626":key==="children"?"#7c3aed":"#3b82f6"}`:"2px solid transparent"
                 }}>{label}</button>
               ))}
             </div>
@@ -554,9 +604,17 @@ Regras finais:
         {/* ── SUBSTITUIÇÕES ── */}
         {tab==="subs" && (
           <div style={{ padding:"1.25rem" }}>
-            <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1.25rem" }}>
+            <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.75rem" }}>
               <span style={{ fontWeight:700,fontSize:"0.85rem" }}>Todas as Substituições</span>
-              <Btn onClick={openAddSub} small>+ Adicionar</Btn>
+              <div style={{ display:"flex",gap:"0.4rem" }}>
+                <Btn onClick={()=>setShowBulkModal(true)} small color="#16a34a">⚡ Designar</Btn>
+                <Btn onClick={openAddSub} small>+ Adicionar</Btn>
+              </div>
+            </div>
+            <div style={{ display:"flex",gap:"0.4rem",marginBottom:"1.25rem" }}>
+              <button onClick={()=>setShowClearConfirm("designated")} style={{ flex:1,padding:"0.35rem 0.5rem",background:"#1e2d45",border:"1px solid #2a3548",borderRadius:"7px",color:"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:500,fontSize:"0.7rem",cursor:"pointer" }}>🗑 Limpar Designadas</button>
+              <button onClick={()=>setShowClearConfirm("pending")} style={{ flex:1,padding:"0.35rem 0.5rem",background:"#1e2d45",border:"1px solid #2a3548",borderRadius:"7px",color:"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:500,fontSize:"0.7rem",cursor:"pointer" }}>🗑 Limpar Pendentes</button>
+              <button onClick={()=>setShowClearConfirm("all")} style={{ flex:1,padding:"0.35rem 0.5rem",background:"#3d1515",border:"1px solid #7f1d1d",borderRadius:"7px",color:"#f87171",fontFamily:"'DM Sans',sans-serif",fontWeight:500,fontSize:"0.7rem",cursor:"pointer" }}>🗑 Limpar Tudo</button>
             </div>
 
             {/* Auto-pending notice */}
@@ -1025,7 +1083,153 @@ Regras finais:
           </div>
         )}
 
+
+        {/* ── CRIANÇAS ── */}
+        {tab==="children" && (
+          <div style={{ padding:"1.25rem" }}>
+            <div style={{ fontWeight:700,fontSize:"0.85rem",marginBottom:"0.35rem" }}>Agenda por Criança</div>
+            <div style={{ fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1.25rem",lineHeight:1.5 }}>
+              Veja todos os terapeutas de cada criança, por dia e horário.
+            </div>
+
+            {/* Search */}
+            <div style={{ position:"relative",marginBottom:"1rem" }}>
+              <input
+                value={childSearch}
+                onChange={e=>setChildSearch(e.target.value)}
+                placeholder="🔍  Buscar criança..."
+                style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"10px",
+                  padding:"0.65rem 0.9rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",
+                  fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box" }}
+              />
+              {childSearch && (
+                <button onClick={()=>setChildSearch("")}
+                  style={{ position:"absolute",right:"0.75rem",top:"50%",transform:"translateY(-50%)",
+                    background:"none",border:"none",color:"#6b7a99",cursor:"pointer",fontSize:"1rem" }}>✕</button>
+              )}
+            </div>
+
+            {/* Day selector */}
+            <div style={{ display:"flex",gap:"0.4rem",marginBottom:"1.25rem",overflowX:"auto",paddingBottom:"0.25rem" }}>
+              {DAYS.map(d=>(
+                <button key={d} onClick={()=>setChildViewDay(d)} style={{
+                  flexShrink:0,padding:"0.45rem 0.75rem",borderRadius:"8px",border:"none",cursor:"pointer",
+                  background:childViewDay===d?"#7c3aed":"#141b26",
+                  color:childViewDay===d?"#fff":"#6b7a99",
+                  fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.78rem"
+                }}>{DAY_LABELS[d]}</button>
+              ))}
+            </div>
+
+            {/* Children list */}
+            {(() => {
+              const slots = therapistSchedules[childViewDay] || [];
+              // Get all unique children
+              let allChildren = [...new Set(slots.map(s=>s.child))].sort();
+              // Apply search filter
+              if (childSearch.trim()) {
+                const q = childSearch.toLowerCase();
+                allChildren = allChildren.filter(c=>c.toLowerCase().includes(q));
+              }
+
+              if (!slots.length) return (
+                <div style={{ textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"2rem 1rem",
+                  background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548" }}>
+                  <div style={{ fontSize:"1.5rem",marginBottom:"0.5rem" }}>📋</div>
+                  Nenhuma agenda importada para {DAY_LABELS[childViewDay]}
+                  <div style={{ fontSize:"0.72rem",marginTop:"0.4rem",color:"#4a5a70" }}>Importe as agendas na aba 📋</div>
+                </div>
+              );
+
+              if (!allChildren.length) return (
+                <div style={{ textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"2rem 1rem",
+                  background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548" }}>
+                  Nenhuma criança encontrada para "{childSearch}"
+                </div>
+              );
+
+              return allChildren.map(child => {
+                const childSlots = slots
+                  .filter(s=>s.child===child)
+                  .sort((a,b)=>a.time.localeCompare(b.time));
+                const isAbsent = (childAbsences[childViewDay]||[]).includes(child);
+                // Unique therapists for this child today
+                const therapists = [...new Set(childSlots.map(s=>s.therapist))];
+                const multiTherapist = therapists.length > 1;
+
+                return (
+                  <div key={child} style={{ background:"#0d1420",border:`1px solid ${isAbsent?"#92400e":multiTherapist?"#4c1d95":"#1e2d45"}`,
+                    borderLeft:`3px solid ${isAbsent?"#f59e0b":multiTherapist?"#7c3aed":"#2a3548"}`,
+                    borderRadius:"10px",padding:"0.85rem 1rem",marginBottom:"0.75rem" }}>
+                    <div style={{ display:"flex",alignItems:"center",gap:"0.5rem",marginBottom:"0.6rem" }}>
+                      <span style={{ fontWeight:700,fontSize:"0.9rem",color:"#e8f0fe" }}>{child}</span>
+                      {isAbsent && <span style={{ fontSize:"0.65rem",background:"#451a03",color:"#fbbf24",borderRadius:"5px",padding:"0.1rem 0.4rem",fontWeight:600 }}>FALTOU</span>}
+                      {multiTherapist && !isAbsent && <span style={{ fontSize:"0.65rem",background:"#2e1065",color:"#a78bfa",borderRadius:"5px",padding:"0.1rem 0.4rem",fontWeight:600 }}>+{therapists.length} terapeutas</span>}
+                    </div>
+                    <div style={{ display:"flex",flexDirection:"column",gap:"0.35rem" }}>
+                      {childSlots.map((s,i)=>(
+                        <div key={i} style={{ display:"flex",alignItems:"center",gap:"0.75rem" }}>
+                          <span style={{ fontFamily:"'DM Mono',monospace",fontSize:"0.8rem",color:"#3b82f6",
+                            background:"#1e2d45",borderRadius:"5px",padding:"0.15rem 0.5rem",
+                            minWidth:"52px",textAlign:"center",flexShrink:0 }}>{s.time}</span>
+                          <span style={{ fontSize:"0.85rem",color:"#cbd5e1" }}>{s.therapist}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              });
+            })()}
+          </div>
+        )}
+
         {/* ── MODALS ── */}
+
+        {/* Designação Rápida */}
+        {showBulkModal && (
+          <Modal title="⚡ Designação Rápida" onClose={()=>setShowBulkModal(false)}>
+            <div style={{ fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1rem",lineHeight:1.5 }}>
+              Converte todas as pendências do paciente no intervalo para <strong style={{color:"#3b82f6"}}>Designada</strong>, ou cria uma nova entrada se não houver pendência.
+            </div>
+            <Field label="Paciente" value={bulkForm.patient} onChange={v=>setBulkForm(f=>({...f,patient:v}))} placeholder="Ex: Gael Tanan" />
+            <div style={{ display:"flex",gap:"0.75rem" }}>
+              <div style={{ flex:1 }}>
+                <label style={{ display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.4rem" }}>De</label>
+                <select value={bulkForm.timeFrom} onChange={e=>setBulkForm(f=>({...f,timeFrom:e.target.value}))}
+                  style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.6rem 0.8rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box",cursor:"pointer" }}>
+                  {TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div style={{ flex:1 }}>
+                <label style={{ display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.4rem" }}>Até</label>
+                <select value={bulkForm.timeTo} onChange={e=>setBulkForm(f=>({...f,timeTo:e.target.value}))}
+                  style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.6rem 0.8rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box",cursor:"pointer" }}>
+                  {TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+            </div>
+            <div style={{ marginTop:"1rem" }}>
+              <Field label="Feita por (terapeuta)" value={bulkForm.therapist} onChange={v=>setBulkForm(f=>({...f,therapist:v}))} placeholder="Ex: Jennifer Felicio" />
+            </div>
+            <SaveCancel onCancel={()=>setShowBulkModal(false)} onSave={saveBulk} />
+          </Modal>
+        )}
+
+        {/* Confirmação de limpeza */}
+        {showClearConfirm && (
+          <Modal title="⚠️ Confirmar limpeza" onClose={()=>setShowClearConfirm(null)}>
+            <div style={{ fontSize:"0.875rem",color:"#94a3b8",marginBottom:"1.25rem",lineHeight:1.6 }}>
+              {showClearConfirm==="designated" && "Remover todas as substituições designadas?"}
+              {showClearConfirm==="pending" && "Remover todas as substituições pendentes?"}
+              {showClearConfirm==="all" && <span style={{color:"#f87171"}}>Remover <strong>todas</strong> as substituições (designadas + pendentes)?</span>}
+            </div>
+            <div style={{ display:"flex",gap:"0.5rem" }}>
+              <button onClick={()=>setShowClearConfirm(null)} style={{ flex:1,padding:"0.65rem",background:"#1e2d45",border:"none",borderRadius:"8px",color:"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.875rem",cursor:"pointer" }}>Cancelar</button>
+              <button onClick={()=>clearSubs(showClearConfirm)} style={{ flex:1,padding:"0.65rem",background:"#dc2626",border:"none",borderRadius:"8px",color:"#fff",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.875rem",cursor:"pointer" }}>Confirmar</button>
+            </div>
+          </Modal>
+        )}
+
         {showSubModal && (
           <Modal title={editingSub?"Editar Substituição":"Nova Substituição"} onClose={()=>setShowSubModal(false)}>
             <Field label="Paciente" value={subForm.patient} onChange={v=>setSubForm(f=>({...f,patient:v}))} placeholder="Ex: Gael Tanan" />
