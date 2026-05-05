@@ -2,8 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 
 const DAYS = ["SEG", "TER", "QUA", "QUI", "SEX"];
 const DAY_LABELS = { SEG: "Segunda", TER: "Terça", QUA: "Quarta", QUI: "Quinta", SEX: "Sexta" };
-const TIME_OPTIONS = ["08:00","08:30","09:00","09:30","10:00","10:30","11:00","11:30","12:00","12:30",
-  "13:00","13:30","14:00","14:30","15:00","15:30","16:00","16:30","17:00","17:30","18:00"];
+const TIME_OPTIONS = ["08:00","09:00","10:00","11:00","13:00","14:00","15:00","16:00","17:00","18:00"];
 
 const initialSubstitutions = [
   { id: 1, patient: "Gael Tanan", time: "15h às 17h", therapist: "Jennifer Felicio", status: "Designated" },
@@ -159,6 +158,10 @@ export default function App() {
   const [uploadPreview, setUploadPreview] = useState(null);
   const fileRef = useRef();
 
+  // ── Absence filters ──
+  const [absenceTherapistSearch, setAbsenceTherapistSearch] = useState("");
+  const [absenceChildSearch, setAbsenceChildSearch] = useState("");
+
   // ── Absences ──
   // absences: { SEG: ["Leticia Alves", "Cassio"], TER: [], ... }
   const [absences, setAbsences] = useState(() => {
@@ -172,17 +175,67 @@ export default function App() {
     return saved ? JSON.parse(saved) : { SEG:[], TER:[], QUA:[], QUI:[], SEX:[] };
   });
 
+  // Crianças desligadas — removidas das agendas, terapeutas ficam livres
+  const [dischargedChildren, setDischargedChildren] = useState(() => {
+    const saved = localStorage.getItem("gestor_discharged");
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [dischargeInput, setDischargeInput] = useState("");
+  const [showDischargeTab, setShowDischargeTab] = useState(false);
+
   // Gravando no Local Save automaticamente toda vez que algo mudar
   useEffect(() => { localStorage.setItem("gestor_subs", JSON.stringify(subs)); }, [subs]);
   useEffect(() => { localStorage.setItem("gestor_freeSlots", JSON.stringify(freeSlots)); }, [freeSlots]);
   useEffect(() => { localStorage.setItem("gestor_schedules", JSON.stringify(therapistSchedules)); }, [therapistSchedules]);
   useEffect(() => { localStorage.setItem("gestor_absences", JSON.stringify(absences)); }, [absences]);
   useEffect(() => { localStorage.setItem("gestor_childAbsences", JSON.stringify(childAbsences)); }, [childAbsences]);
+  useEffect(() => { localStorage.setItem("gestor_discharged", JSON.stringify(dischargedChildren)); }, [dischargedChildren]);
   
   // All known therapist names from freeSlots
   const allTherapists = [...new Set(
     DAYS.flatMap(d => freeSlots[d].map(s => s.therapist))
   )].sort();
+
+  // All known children from schedules
+  const allChildren = [...new Set(
+    DAYS.flatMap(d => (therapistSchedules[d] || []).map(s => s.child))
+  )].sort();
+
+  const dischargeChild = (childName) => {
+    if (!childName.trim()) return;
+    const name = childName.trim();
+    if (dischargedChildren.includes(name)) return;
+    setDischargedChildren(prev => [...prev, name]);
+    // Remove pending subs for this child
+    setSubs(prev => prev.filter(s => s.patient.toLowerCase() !== name.toLowerCase()));
+    // Add therapist free slots for each day this child had sessions
+    setFreeSlots(prevSlots => {
+      const newSlots = { ...prevSlots };
+      DAYS.forEach(day => {
+        const sessions = (therapistSchedules[day] || []).filter(s => s.child.toLowerCase() === name.toLowerCase());
+        sessions.forEach(({ therapist, time }) => {
+          const already = (newSlots[day] || []).some(s => s.therapist === therapist && s.time === time);
+          if (!already) {
+            newSlots[day] = [...(newSlots[day] || []), { id: Date.now() + Math.random(), time, therapist, dischargedChild: name }];
+          }
+        });
+        if (newSlots[day]) newSlots[day].sort((a,b) => a.time.localeCompare(b.time));
+      });
+      return newSlots;
+    });
+  };
+
+  const reactivateChild = (childName) => {
+    setDischargedChildren(prev => prev.filter(n => n !== childName));
+    // Remove the free slots that came from this child's discharge
+    setFreeSlots(prevSlots => {
+      const newSlots = { ...prevSlots };
+      DAYS.forEach(day => {
+        newSlots[day] = (newSlots[day] || []).filter(s => s.dischargedChild !== childName);
+      });
+      return newSlots;
+    });
+  };
 
   const toggleAbsence = (day, name) => {
     setAbsences(prev => {
@@ -342,6 +395,12 @@ TIPO A - TERAPEUTA:
 - Linhas: horarios HH:MM
 - Celulas: nome do paciente, VAZIA, "AT", ou linha com FUNDO PRETO
 
+AGENDA COM COLUNA DUPLA (ESQUERDA / DIREITA):
+- Quando uma celula esta dividida em esquerda e direita (2 pacientes lado a lado), IGNORE a coluna ESQUERDA.
+- Use APENAS a coluna DIREITA: ela representa a substituição JA DESIGNADA para o terapeuta naquele horário.
+- A coluna ESQUERDA é o paciente original que NÃO está sendo atendido (TO, Psicoterapia, etc. do paciente da esquerda já tem cobertura pela direita).
+- Portanto: considere sempre APENAS o nome da célula DIREITA para ocupiedSlots e pendências.
+
 TIPO B - PACIENTE/CRIANCA:
 - Cabecalho: "PACIENTE - NOME"
 - Celulas: tipo de atividade
@@ -375,7 +434,7 @@ Regras finais:
 - absentDays: dias com linha preta
 - Sem agendas de criancas: pendingChildren:[], crossReferences:[]
 - Sem agendas de terapeutas: therapists:[]
-- occupiedSlots: para cada terapeuta, os horarios em que ele ESTA ATENDENDO um paciente (nao livre, nao AT, nao linha preta). Formato: {"SEG":[{"time":"08:00","child":"Nome Paciente"}], ...}
+- occupiedSlots: para cada terapeuta, os horarios em que ele ESTA ATENDENDO um paciente (nao livre, nao AT, nao linha preta). Em celulas DUPLAS, usar apenas a DIREITA. Formato: {"SEG":[{"time":"08:00","child":"Nome Paciente"}], ...}
 - NUNCA escreva texto fora do JSON`;
 
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
@@ -586,15 +645,16 @@ Regras finais:
             <div style={{ display:"flex",gap:"0.4rem" }}>
               {[
                 ["absent", (absences[absenceDay]||[]).length>0 ? `📌 Faltas (${DAYS.reduce((a,d)=>a+(absences[d]||[]).length,0)})` : "📌 Faltas"],
+                ["discharged", dischargedChildren.length>0 ? `🚪 Desligadas (${dischargedChildren.length})` : "🚪 Desligadas"],
                 ["children","👶 Crianças"],
                 ["upload","📋 Importar"]
               ].map(([key,label])=>(
                 <button key={key} onClick={()=>setTab(key)} style={{
                   flex:1,padding:"0.55rem 0.4rem",borderRadius:"10px",border:"none",cursor:"pointer",
                   background:tab===key?"#1e2d45":"transparent",
-                  color:tab===key?(key==="absent"?"#f87171":key==="children"?"#a78bfa":"#3b82f6"):"#6b7a99",
-                  fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.68rem",
-                  borderBottom:tab===key?`2px solid ${key==="absent"?"#dc2626":key==="children"?"#7c3aed":"#3b82f6"}`:"2px solid transparent"
+                  color:tab===key?(key==="absent"?"#f87171":key==="discharged"?"#fb923c":key==="children"?"#a78bfa":"#3b82f6"):"#6b7a99",
+                  fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.65rem",
+                  borderBottom:tab===key?`2px solid ${key==="absent"?"#dc2626":key==="discharged"?"#f97316":key==="children"?"#7c3aed":"#3b82f6"}`:"2px solid transparent"
                 }}>{label}</button>
               ))}
             </div>
@@ -921,6 +981,24 @@ Regras finais:
                 Terapeutas em {DAY_LABELS[absenceDay]}
               </div>
 
+              {allTherapists.length > 0 && (
+                <div style={{ position:"relative",marginBottom:"0.75rem" }}>
+                  <input
+                    value={absenceTherapistSearch}
+                    onChange={e=>setAbsenceTherapistSearch(e.target.value)}
+                    placeholder="🔍  Filtrar terapeuta..."
+                    style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"10px",
+                      padding:"0.55rem 0.9rem",color:"#e8f0fe",fontSize:"0.82rem",outline:"none",
+                      fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box" }}
+                  />
+                  {absenceTherapistSearch && (
+                    <button onClick={()=>setAbsenceTherapistSearch("")}
+                      style={{ position:"absolute",right:"0.75rem",top:"50%",transform:"translateY(-50%)",
+                        background:"none",border:"none",color:"#6b7a99",cursor:"pointer",fontSize:"1rem" }}>✕</button>
+                  )}
+                </div>
+              )}
+
               {allTherapists.length === 0 ? (
                 <div style={{ textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"2rem 1rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548" }}>
                   <div style={{ fontSize:"1.5rem",marginBottom:"0.5rem" }}>📋</div>
@@ -929,7 +1007,9 @@ Regras finais:
                 </div>
               ) : (
                 <div>
-                  {allTherapists.map(name => {
+                  {allTherapists
+                    .filter(name => !absenceTherapistSearch.trim() || name.toLowerCase().includes(absenceTherapistSearch.toLowerCase()))
+                    .map(name => {
                     const isAbsent = (absences[absenceDay]||[]).includes(name);
                     const daySchedule = (therapistSchedules[absenceDay]||[]).filter(s=>s.therapist.toLowerCase()===name.toLowerCase());
                     return (
@@ -1018,7 +1098,28 @@ Regras finais:
                   </div>
                 );
 
-                return childrenToday.map(child => {
+                const filtered = childrenToday.filter(c =>
+                  !absenceChildSearch.trim() || c.toLowerCase().includes(absenceChildSearch.toLowerCase())
+                );
+
+                return (
+                  <>
+                    <div style={{ position:"relative",marginBottom:"0.75rem" }}>
+                      <input
+                        value={absenceChildSearch}
+                        onChange={e=>setAbsenceChildSearch(e.target.value)}
+                        placeholder="🔍  Filtrar criança..."
+                        style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"10px",
+                          padding:"0.55rem 0.9rem",color:"#e8f0fe",fontSize:"0.82rem",outline:"none",
+                          fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box" }}
+                      />
+                      {absenceChildSearch && (
+                        <button onClick={()=>setAbsenceChildSearch("")}
+                          style={{ position:"absolute",right:"0.75rem",top:"50%",transform:"translateY(-50%)",
+                            background:"none",border:"none",color:"#6b7a99",cursor:"pointer",fontSize:"1rem" }}>✕</button>
+                      )}
+                    </div>
+                    {filtered.map(child => {
                   const isAbsent = (childAbsences[absenceDay] || []).includes(child);
                   const slots = (therapistSchedules[absenceDay] || []).filter(s => s.child === child);
 
@@ -1077,9 +1178,85 @@ Regras finais:
                       </div>
                     </div>
                   );
-                });
+                })}
+                  </>
+                );
               })()}
             </div>
+          </div>
+        )}
+
+
+        {/* ── CRIANÇAS DESLIGADAS ── */}
+        {tab==="discharged" && (
+          <div style={{ padding:"1.25rem" }}>
+            <div style={{ fontWeight:700,fontSize:"0.85rem",marginBottom:"0.35rem" }}>Crianças Desligadas</div>
+            <div style={{ fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1.25rem",lineHeight:1.5 }}>
+              Informe o nome da criança desligada. Ela sai da agenda e os terapeutas ficam com horário livre.
+            </div>
+
+            {/* Add discharge input */}
+            <div style={{ display:"flex",gap:"0.5rem",marginBottom:"1.25rem" }}>
+              <div style={{ flex:1,position:"relative" }}>
+                <select
+                  value={dischargeInput}
+                  onChange={e=>setDischargeInput(e.target.value)}
+                  style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"10px",
+                    padding:"0.65rem 0.9rem",color:dischargeInput?"#e8f0fe":"#3a4a60",fontSize:"0.875rem",outline:"none",
+                    fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box",cursor:"pointer" }}>
+                  <option value="">Selecionar criança...</option>
+                  {allChildren.filter(c=>!dischargedChildren.includes(c)).map(c=>(
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+              <button onClick={()=>{ if(dischargeInput){ dischargeChild(dischargeInput); setDischargeInput(""); } }}
+                disabled={!dischargeInput}
+                style={{ padding:"0.65rem 1rem",background:dischargeInput?"#f97316":"#1e2d45",border:"none",borderRadius:"10px",
+                  color:dischargeInput?"#fff":"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:700,fontSize:"0.82rem",cursor:dischargeInput?"pointer":"not-allowed",flexShrink:0 }}>
+                Desligar
+              </button>
+            </div>
+
+            {/* List of discharged children */}
+            {dischargedChildren.length === 0 ? (
+              <div style={{ textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"2rem 1rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548" }}>
+                <div style={{ fontSize:"1.5rem",marginBottom:"0.5rem" }}>🚪</div>
+                Nenhuma criança desligada registrada
+              </div>
+            ) : (
+              <div>
+                <div style={{ fontSize:"0.72rem",fontWeight:700,color:"#6b7a99",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"0.75rem" }}>
+                  {dischargedChildren.length} criança(s) desligada(s)
+                </div>
+                {dischargedChildren.map(child => {
+                  const freedSlots = DAYS.flatMap(d =>
+                    (therapistSchedules[d]||[]).filter(s=>s.child===child).map(s=>({...s,day:d}))
+                  );
+                  return (
+                    <div key={child} style={{ background:"#0d1420",border:"1px solid #7c2d12",borderLeft:"3px solid #f97316",borderRadius:"10px",padding:"0.85rem 1rem",marginBottom:"0.5rem",display:"flex",justifyContent:"space-between",alignItems:"flex-start" }}>
+                      <div>
+                        <div style={{ fontWeight:600,fontSize:"0.875rem",color:"#fed7aa",marginBottom:"0.2rem" }}>{child}</div>
+                        {freedSlots.length > 0 ? (
+                          <div style={{ fontSize:"0.72rem",color:"#6b7a99" }}>
+                            {freedSlots.slice(0,3).map((s,i)=>(
+                              <span key={i} style={{ marginRight:"0.5rem" }}>{DAY_LABELS[s.day]} {s.time} · {s.therapist}</span>
+                            ))}
+                            {freedSlots.length>3&&<span style={{ color:"#4a5a70" }}>+{freedSlots.length-3} mais</span>}
+                          </div>
+                        ) : (
+                          <div style={{ fontSize:"0.72rem",color:"#4a5a70" }}>Terapeutas agora livres nos horários dessa criança</div>
+                        )}
+                      </div>
+                      <button onClick={()=>reactivateChild(child)}
+                        style={{ background:"#1e2d45",border:"none",borderRadius:"6px",color:"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.7rem",cursor:"pointer",padding:"0.3rem 0.6rem",flexShrink:0,marginLeft:"0.5rem" }}>
+                        ↩ Reativar
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -1187,11 +1364,20 @@ Regras finais:
 
         {/* Designação Rápida */}
         {showBulkModal && (
-          <Modal title="⚡ Designação Rápida" onClose={()=>setShowBulkModal(false)}>
+          <Modal title="⚡ Designar Pendência" onClose={()=>setShowBulkModal(false)}>
             <div style={{ fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1rem",lineHeight:1.5 }}>
-              Converte todas as pendências do paciente no intervalo para <strong style={{color:"#3b82f6"}}>Designada</strong>, ou cria uma nova entrada se não houver pendência.
+              Selecione um paciente pendente e atribua um terapeuta para <strong style={{color:"#3b82f6"}}>Designada</strong>.
             </div>
-            <Field label="Paciente" value={bulkForm.patient} onChange={v=>setBulkForm(f=>({...f,patient:v}))} placeholder="Ex: Gael Tanan" />
+            <div style={{ marginBottom:"1rem" }}>
+              <label style={{ display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.4rem" }}>Paciente Pendente</label>
+              <select value={bulkForm.patient} onChange={e=>setBulkForm(f=>({...f,patient:e.target.value}))}
+                style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.6rem 0.8rem",color:bulkForm.patient?"#e8f0fe":"#3a4a60",fontSize:"0.875rem",outline:"none",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box",cursor:"pointer" }}>
+                <option value="">Selecionar paciente...</option>
+                {[...new Set(pending.map(s=>s.patient))].sort().map(name=>(
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+            </div>
             <div style={{ display:"flex",gap:"0.75rem" }}>
               <div style={{ flex:1 }}>
                 <label style={{ display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.4rem" }}>De</label>
@@ -1209,7 +1395,14 @@ Regras finais:
               </div>
             </div>
             <div style={{ marginTop:"1rem" }}>
-              <Field label="Feita por (terapeuta)" value={bulkForm.therapist} onChange={v=>setBulkForm(f=>({...f,therapist:v}))} placeholder="Ex: Jennifer Felicio" />
+              <label style={{ display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.4rem" }}>Terapeuta Substituto</label>
+              <select value={bulkForm.therapist} onChange={e=>setBulkForm(f=>({...f,therapist:e.target.value}))}
+                style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.6rem 0.8rem",color:bulkForm.therapist?"#e8f0fe":"#3a4a60",fontSize:"0.875rem",outline:"none",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box",cursor:"pointer" }}>
+                <option value="">Selecionar terapeuta...</option>
+                {allTherapists.map(name=>(
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
             </div>
             <SaveCancel onCancel={()=>setShowBulkModal(false)} onSave={saveBulk} />
           </Modal>
