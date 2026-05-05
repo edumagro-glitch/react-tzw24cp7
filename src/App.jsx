@@ -690,7 +690,7 @@ Regras finais:
           <div style={{ display:"flex",alignItems:"center",gap:"0.6rem",marginBottom:"1.25rem" }}>
             <div style={{ width:"32px",height:"32px",borderRadius:"8px",background:"linear-gradient(135deg,#3b82f6,#6366f1)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"1rem" }}>🏥</div>
             <div>
-              <div style={{ fontWeight:700,fontSize:"0.95rem",letterSpacing:"-0.02em" }}>Gestão de Substituições</div>
+              <div style={{ fontWeight:700,fontSize:"0.95rem",letterSpacing:"-0.02em" }}>Gestão - Vila Sonia</div>
               <div style={{ fontSize:"0.7rem",color:"#6b7a99" }}>Controle diário</div>
             </div>
           </div>
