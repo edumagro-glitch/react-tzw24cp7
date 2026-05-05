@@ -185,17 +185,17 @@ export default function App() {
   });
 
   // Gravando no Local Save automaticamente toda vez que algo mudar
+  const [childActivities, setChildActivities] = useState(() => {
+    const saved = localStorage.getItem("gestor_childActivities");
+    return saved ? JSON.parse(saved) : { SEG:[], TER:[], QUA:[], QUI:[], SEX:[] };
+  });
+
   useEffect(() => { localStorage.setItem("gestor_subs", JSON.stringify(subs)); }, [subs]);
   useEffect(() => { localStorage.setItem("gestor_freeSlots", JSON.stringify(freeSlots)); }, [freeSlots]);
   useEffect(() => { localStorage.setItem("gestor_schedules", JSON.stringify(therapistSchedules)); }, [therapistSchedules]);
   useEffect(() => { localStorage.setItem("gestor_absences", JSON.stringify(absences)); }, [absences]);
   useEffect(() => { localStorage.setItem("gestor_childActivities", JSON.stringify(childActivities)); }, [childActivities]);
   useEffect(() => { localStorage.setItem("gestor_childAbsences", JSON.stringify(childAbsences)); }, [childAbsences]);
-  
-  const [childActivities, setChildActivities] = useState(() => {
-    const saved = localStorage.getItem("gestor_childActivities");
-    return saved ? JSON.parse(saved) : { SEG:[], TER:[], QUA:[], QUI:[], SEX:[] };
-  });
 
   // All known therapist names from freeSlots
   const allTherapists = [...new Set(
