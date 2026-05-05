@@ -939,94 +939,92 @@ Regras finais:
                 </button>
               </div>
             )}
+
+            {/* ── FALTA DE CRIANÇAS ── */}
+            <div style={{ marginTop:"2rem" }}>
+              <div style={{ fontSize:"0.72rem",fontWeight:700,color:"#6b7a99",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"0.75rem" }}>
+                👶 Faltas de Crianças em {DAY_LABELS[absenceDay]}
+              </div>
+              <div style={{ fontSize:"0.75rem",color:"#6b7a99",marginBottom:"0.75rem",lineHeight:1.5 }}>
+                Marque a criança ausente — o terapeuta fica livre naquele horário.
+              </div>
+
+              {(() => {
+                const childrenToday = [...new Set(
+                  (therapistSchedules[absenceDay] || []).map(s => s.child)
+                )].sort();
+
+                if (!childrenToday.length) return (
+                  <div style={{ textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"1.5rem 1rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548" }}>
+                    Nenhuma criança com agenda importada nesse dia
+                  </div>
+                );
+
+                return childrenToday.map(child => {
+                  const isAbsent = (childAbsences[absenceDay] || []).includes(child);
+                  const slots = (therapistSchedules[absenceDay] || []).filter(s => s.child === child);
+
+                  return (
+                    <div key={child} onClick={() => {
+                      setChildAbsences(prev => {
+                        const current = prev[absenceDay] || [];
+                        const updated = current.includes(child)
+                          ? current.filter(n => n !== child)
+                          : [...current, child];
+
+                        if (!current.includes(child)) {
+                          setFreeSlots(prevSlots => {
+                            const newSlots = { ...prevSlots };
+                            slots.forEach(({ therapist, time }) => {
+                              const alreadyFree = (newSlots[absenceDay] || []).some(
+                                s => s.therapist === therapist && s.time === time
+                              );
+                              if (!alreadyFree) {
+                                newSlots[absenceDay] = [
+                                  ...(newSlots[absenceDay] || []),
+                                  { id: Date.now() + Math.random(), time, therapist, childAbsence: child }
+                                ];
+                              }
+                            });
+                            newSlots[absenceDay].sort((a,b) => a.time.localeCompare(b.time));
+                            return newSlots;
+                          });
+                        } else {
+                          setFreeSlots(prevSlots => ({
+                            ...prevSlots,
+                            [absenceDay]: (prevSlots[absenceDay] || []).filter(
+                              s => s.childAbsence !== child
+                            )
+                          }));
+                        }
+
+                        return { ...prev, [absenceDay]: updated };
+                      });
+                    }}
+                      style={{ display:"flex",alignItems:"center",justifyContent:"space-between",
+                        padding:"0.75rem 1rem",marginBottom:"0.4rem",borderRadius:"10px",cursor:"pointer",
+                        background:isAbsent?"#1a1208":"#0d1420",
+                        border:`1px solid ${isAbsent?"#f59e0b":"#1e2d45"}` }}>
+                      <div>
+                        <div style={{ fontWeight:600,fontSize:"0.875rem",color:isAbsent?"#fcd34d":"#e8f0fe" }}>{child}</div>
+                        <div style={{ fontSize:"0.72rem",color:"#6b7a99",marginTop:"0.15rem" }}>
+                          {slots.map(s=>`${s.time} com ${s.therapist}`).join(" · ")}
+                        </div>
+                      </div>
+                      <div style={{ width:"22px",height:"22px",borderRadius:"6px",flexShrink:0,
+                        background:isAbsent?"#f59e0b":"#1e2d45",
+                        border:`2px solid ${isAbsent?"#f59e0b":"#2a3548"}`,
+                        display:"flex",alignItems:"center",justifyContent:"center",fontSize:"0.75rem",color:"#000" }}>
+                        {isAbsent?"✓":""}
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
           </div>
         )}
 
-{/* ── FALTA DE CRIANÇAS ── */}
-<div style={{ marginTop:"2rem" }}>
-  <div style={{ fontSize:"0.72rem",fontWeight:700,color:"#6b7a99",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"0.75rem" }}>
-    👶 Faltas de Crianças em {DAY_LABELS[absenceDay]}
-  </div>
-  <div style={{ fontSize:"0.75rem",color:"#6b7a99",marginBottom:"0.75rem",lineHeight:1.5 }}>
-    Marque a criança ausente — o terapeuta fica livre naquele horário.
-  </div>
-
-  {/* Lista de crianças que têm agenda no dia */}
-  {(() => {
-    const childrenToday = [...new Set(
-      (therapistSchedules[absenceDay] || []).map(s => s.child)
-    )].sort();
-
-    if (!childrenToday.length) return (
-      <div style={{ textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"1.5rem 1rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548" }}>
-        Nenhuma criança com agenda importada nesse dia
-      </div>
-    );
-
-    return childrenToday.map(child => {
-      const isAbsent = (childAbsences[absenceDay] || []).includes(child);
-      const slots = (therapistSchedules[absenceDay] || []).filter(s => s.child === child);
-
-      return (
-        <div key={child} onClick={() => {
-          setChildAbsences(prev => {
-            const current = prev[absenceDay] || [];
-            const updated = current.includes(child)
-              ? current.filter(n => n !== child)
-              : [...current, child];
-
-            // Se marcando ausente: adicionar horários do terapeuta como livres
-            if (!current.includes(child)) {
-              setFreeSlots(prevSlots => {
-                const newSlots = { ...prevSlots };
-                slots.forEach(({ therapist, time }) => {
-                  const alreadyFree = (newSlots[absenceDay] || []).some(
-                    s => s.therapist === therapist && s.time === time
-                  );
-                  if (!alreadyFree) {
-                    newSlots[absenceDay] = [
-                      ...(newSlots[absenceDay] || []),
-                      { id: Date.now() + Math.random(), time, therapist, childAbsence: child }
-                    ];
-                  }
-                });
-                newSlots[absenceDay].sort((a,b) => a.time.localeCompare(b.time));
-                return newSlots;
-              });
-            } else {
-              // Se desmarcando: remover os horários que foram liberados por essa criança
-              setFreeSlots(prevSlots => ({
-                ...prevSlots,
-                [absenceDay]: (prevSlots[absenceDay] || []).filter(
-                  s => s.childAbsence !== child
-                )
-              }));
-            }
-
-            return { ...prev, [absenceDay]: updated };
-          });
-        }}
-          style={{ display:"flex",alignItems:"center",justifyContent:"space-between",
-            padding:"0.75rem 1rem",marginBottom:"0.4rem",borderRadius:"10px",cursor:"pointer",
-            background:isAbsent?"#1a1208":"#0d1420",
-            border:`1px solid ${isAbsent?"#f59e0b":"#1e2d45"}` }}>
-          <div>
-            <div style={{ fontWeight:600,fontSize:"0.875rem",color:isAbsent?"#fcd34d":"#e8f0fe" }}>{child}</div>
-            <div style={{ fontSize:"0.72rem",color:"#6b7a99",marginTop:"0.15rem" }}>
-              {slots.map(s=>`${s.time} com ${s.therapist}`).join(" · ")}
-            </div>
-          </div>
-          <div style={{ width:"22px",height:"22px",borderRadius:"6px",flexShrink:0,
-            background:isAbsent?"#f59e0b":"#1e2d45",
-            border:`2px solid ${isAbsent?"#f59e0b":"#2a3548"}`,
-            display:"flex",alignItems:"center",justifyContent:"center",fontSize:"0.75rem",color:"#000" }}>
-            {isAbsent?"✓":""}
-          </div>
-        </div>
-      );
-    });
-  })()}
-</div>
         {/* ── MODALS ── */}
         {showSubModal && (
           <Modal title={editingSub?"Editar Substituição":"Nova Substituição"} onClose={()=>setShowSubModal(false)}>
