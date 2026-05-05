@@ -491,7 +491,7 @@ Regras finais:
 - occupiedSlots: para cada terapeuta, os horarios em que ele ESTA ATENDENDO um paciente (nao livre, nao AT, nao linha preta). Em celulas com barra "NomeA/ NomeB", registrar APENAS NomeB (pos-barra) como child naquele horario. Celulas sem barra: registrar o nome completo. Formato: {"SEG":[{"time":"08:00","child":"Nome Paciente"}], ...}
 - NUNCA escreva texto fora do JSON`;
 
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      const apiKey = "AIzaSyCHwt-8iF7rS45LIds6Yr2jlcthaHkKGLA";
       if (!apiKey) throw new Error("Chave de API da IA não encontrada nas configurações.");
 
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
