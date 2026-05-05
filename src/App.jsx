@@ -491,7 +491,7 @@ Regras finais:
 - occupiedSlots: para cada terapeuta, os horarios em que ele ESTA ATENDENDO um paciente (nao livre, nao AT, nao linha preta). Em celulas com barra "NomeA/ NomeB", registrar APENAS NomeB (pos-barra) como child naquele horario. Celulas sem barra: registrar o nome completo. Formato: {"SEG":[{"time":"08:00","child":"Nome Paciente"}], ...}
 - NUNCA escreva texto fora do JSON`;
 
-      const apiKey = "AIzaSyCHwt-8iF7rS45LIds6Yr2jlcthaHkKGLA";
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
       if (!apiKey) throw new Error("Chave de API da IA não encontrada nas configurações.");
 
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
@@ -690,7 +690,7 @@ Regras finais:
           <div style={{ display:"flex",alignItems:"center",gap:"0.6rem",marginBottom:"1.25rem" }}>
             <div style={{ width:"32px",height:"32px",borderRadius:"8px",background:"linear-gradient(135deg,#3b82f6,#6366f1)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"1rem" }}>🏥</div>
             <div>
-              <div style={{ fontWeight:700,fontSize:"0.95rem",letterSpacing:"-0.02em" }}>Gestão - Vila Sonia</div>
+              <div style={{ fontWeight:700,fontSize:"0.95rem",letterSpacing:"-0.02em" }}>Gestão de Substituições</div>
               <div style={{ fontSize:"0.7rem",color:"#6b7a99" }}>Controle diário</div>
             </div>
           </div>
@@ -1435,9 +1435,35 @@ Regras finais:
             <div style={{ fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1rem",lineHeight:1.5 }}>
               Selecione um paciente pendente e atribua um terapeuta para <strong style={{color:"#3b82f6"}}>Designada</strong>.
             </div>
+
+            {/* Patient selector */}
             <div style={{ marginBottom:"1rem" }}>
               <label style={{ display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.4rem" }}>Paciente Pendente</label>
-              <select value={bulkForm.patient} onChange={e=>setBulkForm(f=>({...f,patient:e.target.value}))}
+              <select value={bulkForm.patient} onChange={e=>{
+                const name = e.target.value;
+                // Auto-fill timeFrom/timeTo from the patient's pending entries
+                const patPending = pending.filter(s=>s.patient===name);
+                let autoFrom = "08:00", autoTo = "08:00";
+                if (patPending.length > 0) {
+                  // Extract all time tokens from all pending entries of this patient
+                  const allTimes = patPending.flatMap(s => {
+                    const raw = s.time || "";
+                    // Handle "HH:MM às HH:MM" or "HH:MM" or "Hh" formats
+                    return raw.split(/às|a /).map(t => {
+                      const clean = t.trim().replace(/h$/i,"");
+                      // Normalize to HH:MM
+                      if (clean.includes(":")) return clean.padStart(5,"0");
+                      if (/^\d{1,2}$/.test(clean)) return clean.padStart(2,"0")+":00";
+                      return null;
+                    }).filter(Boolean);
+                  }).sort();
+                  if (allTimes.length > 0) {
+                    autoFrom = allTimes[0];
+                    autoTo = allTimes[allTimes.length-1];
+                  }
+                }
+                setBulkForm(f=>({...f, patient:name, timeFrom:autoFrom, timeTo:autoTo}));
+              }}
                 style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.6rem 0.8rem",color:bulkForm.patient?"#e8f0fe":"#3a4a60",fontSize:"0.875rem",outline:"none",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box",cursor:"pointer" }}>
                 <option value="">Selecionar paciente...</option>
                 {[...new Set(pending.map(s=>s.patient))].sort().map(name=>(
@@ -1445,23 +1471,62 @@ Regras finais:
                 ))}
               </select>
             </div>
-            <div style={{ display:"flex",gap:"0.75rem" }}>
-              <div style={{ flex:1 }}>
-                <label style={{ display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.4rem" }}>De</label>
-                <select value={bulkForm.timeFrom} onChange={e=>setBulkForm(f=>({...f,timeFrom:e.target.value}))}
-                  style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.6rem 0.8rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box",cursor:"pointer" }}>
-                  {TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
-              <div style={{ flex:1 }}>
-                <label style={{ display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.4rem" }}>Até</label>
-                <select value={bulkForm.timeTo} onChange={e=>setBulkForm(f=>({...f,timeTo:e.target.value}))}
-                  style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.6rem 0.8rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box",cursor:"pointer" }}>
-                  {TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
-            </div>
-            <div style={{ marginTop:"1rem" }}>
+
+            {/* Show the pending time info for selected patient */}
+            {bulkForm.patient && (() => {
+              const patPending = pending.filter(s=>s.patient===bulkForm.patient);
+              return (
+                <div style={{ background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.65rem 0.85rem",marginBottom:"1rem" }}>
+                  <div style={{ fontSize:"0.68rem",fontWeight:700,color:"#6b7a99",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"0.4rem" }}>Horários pendentes</div>
+                  {patPending.map((s,i)=>(
+                    <div key={i} style={{ display:"flex",alignItems:"center",gap:"0.6rem",marginBottom:"0.2rem" }}>
+                      <span style={{ fontFamily:"'DM Mono',monospace",fontSize:"0.82rem",color:"#f59e0b",background:"#2a2010",borderRadius:"5px",padding:"0.1rem 0.45rem" }}>{s.time}</span>
+                      {s.day && <span style={{ fontSize:"0.75rem",color:"#64748b" }}>{DAY_LABELS[s.day]||s.day}</span>}
+                      {s.absentTherapist && <span style={{ fontSize:"0.7rem",color:"#6b7a99" }}>· falta: {s.absentTherapist}</span>}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+
+            {/* Time range — only times extracted from this patient's pending entries */}
+            {bulkForm.patient && (() => {
+              const patPending = pending.filter(s=>s.patient===bulkForm.patient);
+              // Build unique sorted set of times from pending entries
+              const pendingTimes = [...new Set(patPending.flatMap(s => {
+                const raw = s.time || "";
+                return raw.split(/às|a /).map(t => {
+                  const clean = t.trim().replace(/h$/i,"");
+                  if (clean.includes(":")) return clean.padStart(5,"0");
+                  if (/^\d{1,2}$/.test(clean)) return clean.padStart(2,"0")+":00";
+                  return null;
+                }).filter(Boolean);
+              }))].sort();
+
+              if (pendingTimes.length === 0) return null;
+
+              return (
+                <div style={{ display:"flex",gap:"0.75rem",marginBottom:"1rem" }}>
+                  <div style={{ flex:1 }}>
+                    <label style={{ display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.4rem" }}>De</label>
+                    <select value={bulkForm.timeFrom} onChange={e=>setBulkForm(f=>({...f,timeFrom:e.target.value}))}
+                      style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.6rem 0.8rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box",cursor:"pointer" }}>
+                      {pendingTimes.map(t=><option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ flex:1 }}>
+                    <label style={{ display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.4rem" }}>Até</label>
+                    <select value={bulkForm.timeTo} onChange={e=>setBulkForm(f=>({...f,timeTo:e.target.value}))}
+                      style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.6rem 0.8rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box",cursor:"pointer" }}>
+                      {pendingTimes.filter(t=>t>=bulkForm.timeFrom).map(t=><option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Therapist selector */}
+            <div style={{ marginBottom:"1rem" }}>
               <label style={{ display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.4rem" }}>Terapeuta Substituto</label>
               <select value={bulkForm.therapist} onChange={e=>setBulkForm(f=>({...f,therapist:e.target.value}))}
                 style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.6rem 0.8rem",color:bulkForm.therapist?"#e8f0fe":"#3a4a60",fontSize:"0.875rem",outline:"none",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box",cursor:"pointer" }}>
@@ -1471,6 +1536,7 @@ Regras finais:
                 ))}
               </select>
             </div>
+
             <SaveCancel onCancel={()=>setShowBulkModal(false)} onSave={saveBulk} />
           </Modal>
         )}
