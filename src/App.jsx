@@ -394,6 +394,25 @@ export default function App() {
     r.readAsDataURL(file);
   });
 
+  const callGemini = async (imageParts, systemPrompt, apiKey) => {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        contents: [{ role: "user", parts: [...imageParts, { text: `Analise as ${imageParts.length} imagem(ns). Retorne o JSON completo.` }] }],
+        generationConfig: { temperature: 0.1, maxOutputTokens: 8192 }
+      })
+    });
+    const data = await response.json();
+    if (data.error) throw new Error(`API: ${data.error.message}`);
+    if (!data.candidates || !data.candidates.length) throw new Error("Resposta vazia da IA.");
+    const finishReason = data.candidates[0].finishReason;
+    const rawText = data.candidates[0].content.parts[0].text;
+    if (finishReason === "MAX_TOKENS") throw new Error("TRUNCATED:" + rawText);
+    return rawText;
+  };
+
   const handleFiles = async files => {
     if (!files||!files.length) return;
     setUploading(true);
@@ -401,13 +420,23 @@ export default function App() {
     setUploadPreview(null);
 
     try {
-      const imageParts = await Promise.all(
-        Array.from(files).map(async file => {
-          const b64 = await toBase64(file);
-          const mt = file.type && file.type !== "" ? file.type : (file.name.match(/\.jpe?g$/i) ? "image/jpeg" : "image/png");
-          return { inlineData: { data: b64, mimeType: mt } };
-        })
-      );
+      const allFiles = Array.from(files);
+      const toImgPart = async file => {
+        const b64 = await toBase64(file);
+        const mt = file.type && file.type !== "" ? file.type : (file.name.match(/\.jpe?g$/i) ? "image/jpeg" : "image/png");
+        return { inlineData: { data: b64, mimeType: mt } };
+      };
+
+      // Split into batches of 4 images max to avoid token overflow
+      const BATCH = 4;
+      const batches = [];
+      for (let i = 0; i < allFiles.length; i += BATCH) {
+        batches.push(allFiles.slice(i, i + BATCH));
+      }
+
+      const imageParts = await Promise.all(allFiles.map(toImgPart));
+      // Use first batch approach but keep all parts for single call if <=4
+      const useAllAtOnce = allFiles.length <= BATCH;
 
       const systemPrompt = `Você é um extrator de dados de agendas de clínica de terapia infantil. Responda APENAS com JSON, sem texto antes ou depois.
 
@@ -453,70 +482,72 @@ Regras finais:
 - Sem agendas de criancas: pendingChildren:[], crossReferences:[]
 - Sem agendas de terapeutas: therapists:[]
 - occupiedSlots: para cada terapeuta, os horarios em que ele ESTA ATENDENDO um paciente (nao livre, nao AT, nao linha preta). Formato: {"SEG":[{"time":"08:00","child":"Nome Paciente"}], ...}
+- childOnlyActivities: array de { child, day, time, activity } para TODAS as atividades encontradas nas agendas TIPO B, independente de ter terapeuta ou não. Use este campo sempre que houver agendas de crianças.
 - NUNCA escreva texto fora do JSON`;
 
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
       if (!apiKey) throw new Error("Chave de API da IA não encontrada nas configurações.");
 
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: systemPrompt }] },
-          contents: [{
-            role: "user",
-            parts: [
-              ...imageParts,
-              { text: `Analise as ${files.length} imagem(ns). Identifique terapeutas e pacientes, aplique todas as regras e retorne o JSON completo.` }
-            ]
-          }],
-          generationConfig: { temperature: 0.1 }
-        })
-      });
-
-      const data = await response.json();
-
-      if (data.error) throw new Error(`API: ${data.error.message}`);
-      if (!data.candidates || data.candidates.length === 0) throw new Error(`Resposta vazia da IA.`);
-
-      const rawText = data.candidates[0].content.parts[0].text;
-
-      // Detect case where only patient agendas were uploaded (no therapist agendas)
-      const lower = rawText.toLowerCase();
-      const noTherapists = !rawText.includes("{") && (
-        lower.includes("tipo b") || lower.includes("não há") ||
-        lower.includes("nenhuma agenda tipo a") || lower.includes("apenas agenda")
-      );
-      if (noTherapists) {
-        setUploading(false);
-        setUploadStatus({ ok:false, message:"⚠️ Só foram detectadas agendas de crianças. Inclua também as agendas dos terapeutas (ATC) no mesmo upload para gerar os horários livres e pendências." });
-        return;
-      }
-
-      // Robust JSON extraction — find outermost { } block
       const extractJSON = (str) => {
         const start = str.indexOf("{");
-        if (start === -1) {
-          setUploadStatus({ ok:false, message:`⚠️ Só foram detectadas agendas de crianças. Inclua também as agendas dos terapeutas (ATC) no mesmo upload.` });
-          throw new Error("NO_JSON");
-        }
+        if (start === -1) throw new Error("NO_JSON");
         let depth = 0;
         for (let i = start; i < str.length; i++) {
           if (str[i] === "{") depth++;
           else if (str[i] === "}") { depth--; if (depth === 0) return str.slice(start, i+1); }
         }
-        throw new Error("JSON incompleto na resposta da IA");
+        // JSON was truncated — try to recover by closing open braces/brackets
+        throw new Error("JSON incompleto — tente enviar menos imagens por vez (máx. 4)");
       };
 
-      const jsonStr = extractJSON(rawText);
-      if (jsonStr === null) return;
-      const parsed = JSON.parse(jsonStr);
+      const parseRaw = (rawText) => {
+        if (!rawText.includes("{")) return { therapists:[], crossReferences:[], pendingChildren:[], childOnlyActivities:[] };
+        const jsonStr = extractJSON(rawText);
+        return JSON.parse(jsonStr);
+      };
 
-      const therapists = parsed.therapists || (Array.isArray(parsed)?parsed:[]);
-      const crossRefs = parsed.crossReferences || [];
-      const pendingChildren = parsed.pendingChildren || [];
+      let allTherapists = [], allCrossRefs = [], allPendingChildren = [], allChildActivities = [];
 
-      setUploadPreview({ therapists, crossRefs, pendingChildren });
+      if (useAllAtOnce) {
+        // Single call for ≤4 images
+        const rawText = await callGemini(imageParts, systemPrompt, apiKey);
+        const parsed = parseRaw(rawText);
+        allTherapists = parsed.therapists || [];
+        allCrossRefs = parsed.crossReferences || [];
+        allPendingChildren = parsed.pendingChildren || [];
+        allChildActivities = parsed.childOnlyActivities || [];
+      } else {
+        // Batched: process 4 images at a time, merge results
+        setUploadStatus({ ok:null, message:`⏳ Processando ${batches.length} lotes de imagens...` });
+        for (let b = 0; b < batches.length; b++) {
+          setUploadStatus({ ok:null, message:`⏳ Processando lote ${b+1} de ${batches.length}...` });
+          const batchParts = await Promise.all(batches[b].map(toImgPart));
+          try {
+            const rawText = await callGemini(batchParts, systemPrompt, apiKey);
+            const parsed = parseRaw(rawText);
+            // Merge — avoid duplicate therapist names
+            const existingNames = new Set(allTherapists.map(t=>t.name.toLowerCase()));
+            (parsed.therapists||[]).forEach(t => {
+              if (!existingNames.has(t.name.toLowerCase())) {
+                allTherapists.push(t);
+                existingNames.add(t.name.toLowerCase());
+              }
+            });
+            allCrossRefs = [...allCrossRefs, ...(parsed.crossReferences||[])];
+            allPendingChildren = [...allPendingChildren, ...(parsed.pendingChildren||[])];
+            allChildActivities = [...allChildActivities, ...(parsed.childOnlyActivities||[])];
+          } catch(batchErr) {
+            throw batchErr;
+          }
+        }
+        setUploadStatus(null);
+      }
+
+      const therapists = allTherapists;
+      const crossRefs = allCrossRefs;
+      const pendingChildren = allPendingChildren;
+
+      setUploadPreview({ therapists, crossRefs, pendingChildren, childOnlyActivities: allChildActivities });
       setUploading(false);
 
     } catch(err) {
@@ -527,7 +558,7 @@ Regras finais:
 
   const confirmUpload = () => {
     if (!uploadPreview) return;
-    const { therapists, pendingChildren } = uploadPreview;
+    const { therapists, pendingChildren, childOnlyActivities = [] } = uploadPreview;
 
     // Build therapistSchedules + childActivities
     const newSchedules = { SEG:[], TER:[], QUA:[], QUI:[], SEX:[] };
@@ -550,6 +581,17 @@ Regras finais:
       if (newActivities[day] && !newActivities[day].some(a=>a.child===child&&a.time===time))
         newActivities[day].push({ child, time, activity: activity||"", therapist: "" });
     });
+    // Merge childOnlyActivities (from TIPO B only uploads)
+    const childOnlyByDay = { SEG:[], TER:[], QUA:[], QUI:[], SEX:[] };
+    childOnlyActivities.forEach(({ child, day, time, activity }) => {
+      if (childOnlyByDay[day] && !newActivities[day].some(a=>a.child===child&&a.time===time)) {
+        childOnlyByDay[day].push({ child, time, activity: activity||"", therapist:"" });
+      }
+    });
+    DAYS.forEach(day => {
+      newActivities[day] = [...newActivities[day], ...childOnlyByDay[day]];
+    });
+
     setChildActivities(prev => {
       const merged = {...prev};
       DAYS.forEach(day => {
@@ -631,7 +673,9 @@ Regras finais:
     const pendingMsg = pendingChildren.length>0 ? ` · ${Object.keys(
       pendingChildren.reduce((a,c)=>({...a,[`${c.child}||${c.day}`]:1}),{})
     ).length} pendência(s) criadas automaticamente` : "";
-    setUploadStatus({ ok:true, message:`✅ ${therapists.length} terapeuta(s) importado(s)${pendingMsg}` });
+    const childActivitiesCount = childOnlyActivities.length;
+    const childMsg = childActivitiesCount > 0 && !therapists.length ? `✅ Agendas de crianças importadas (${childActivitiesCount} atividades registradas)` : `✅ ${therapists.length} terapeuta(s) importado(s)${pendingMsg}${childActivitiesCount>0?` · ${childActivitiesCount} atividade(s) de crianças`:""}`;
+    setUploadStatus({ ok:true, message: childMsg });
     setTimeout(()=>setUploadStatus(null), 5000);
   };
 
@@ -912,7 +956,7 @@ Regras finais:
 
                 {/* Per-therapist preview */}
                 <div style={{ fontWeight:700,fontSize:"0.82rem",color:"#e8f0fe",marginBottom:"0.75rem" }}>
-                  {uploadPreview.therapists.length} terapeuta(s) — revise e confirme:
+  {uploadPreview.therapists.length > 0 ? `${uploadPreview.therapists.length} terapeuta(s) — revise e confirme:` : "Agendas de crianças detectadas — confirme para importar atividades:"}
                 </div>
                 {uploadPreview.therapists.map((t,i)=>{
                   const totalFree = DAYS.reduce((acc,d)=>acc+(t.freeSlots[d]||[]).length,0);
