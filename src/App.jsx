@@ -400,17 +400,17 @@ export default function App() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ role: "user", parts: [...imageParts, { text: `Analise as ${imageParts.length} imagem(ns). Retorne o JSON completo.` }] }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 8192 }
+        contents: [{ role: "user", parts: [...imageParts, { text: `Analise as ${imageParts.length} imagem(ns). Retorne o JSON completo. IMPORTANTE: o JSON deve ser conciso — omita campos vazios, use arrays [] para dias sem dados.` }] }],
+        generationConfig: { temperature: 0.1, maxOutputTokens: 16384 }
       })
     });
     const data = await response.json();
     if (data.error) throw new Error(`API: ${data.error.message}`);
     if (!data.candidates || !data.candidates.length) throw new Error("Resposta vazia da IA.");
     const finishReason = data.candidates[0].finishReason;
-    const rawText = data.candidates[0].content.parts[0].text;
-    if (finishReason === "MAX_TOKENS") throw new Error("TRUNCATED:" + rawText);
-    return rawText;
+    const rawText = data.candidates[0].content?.parts?.[0]?.text || "";
+    // Return object with truncation flag instead of throwing
+    return { rawText, truncated: finishReason === "MAX_TOKENS" };
   };
 
   const handleFiles = async files => {
@@ -488,7 +488,7 @@ Regras finais:
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
       if (!apiKey) throw new Error("Chave de API da IA não encontrada nas configurações.");
 
-      const extractJSON = (str) => {
+      const extractJSON = (str, allowPartial = false) => {
         const start = str.indexOf("{");
         if (start === -1) throw new Error("NO_JSON");
         let depth = 0;
@@ -496,49 +496,74 @@ Regras finais:
           if (str[i] === "{") depth++;
           else if (str[i] === "}") { depth--; if (depth === 0) return str.slice(start, i+1); }
         }
-        // JSON was truncated — try to recover by closing open braces/brackets
-        throw new Error("JSON incompleto — tente enviar menos imagens por vez (máx. 4)");
+        if (!allowPartial) throw new Error("JSON incompleto");
+        // Try to recover truncated JSON by closing open structures
+        let partial = str.slice(start);
+        // Remove trailing incomplete key/value
+        partial = partial.replace(/,?\s*"[^"]*"\s*:\s*[^,}\]]*$/, "");
+        partial = partial.replace(/,\s*$/, "");
+        // Close open arrays and objects
+        let od = 0, ad = 0;
+        for (const ch of partial) { if(ch==="{") od++; else if(ch==="}") od--; else if(ch==="[") ad++; else if(ch==="]") ad--; }
+        partial += "]".repeat(Math.max(0, ad)) + "}".repeat(Math.max(0, od));
+        try { JSON.parse(partial); return partial; } catch(e) { throw new Error("JSON incompleto mesmo após recuperação"); }
       };
 
-      const parseRaw = (rawText) => {
-        if (!rawText.includes("{")) return { therapists:[], crossReferences:[], pendingChildren:[], childOnlyActivities:[] };
-        const jsonStr = extractJSON(rawText);
+      const parseRaw = (rawText, allowPartial = false) => {
+        if (!rawText || !rawText.includes("{")) return { therapists:[], crossReferences:[], pendingChildren:[], childOnlyActivities:[] };
+        const jsonStr = extractJSON(rawText, allowPartial);
         return JSON.parse(jsonStr);
       };
 
       let allTherapists = [], allCrossRefs = [], allPendingChildren = [], allChildActivities = [];
 
+      const mergeResult = (parsed) => {
+        const existingNames = new Set(allTherapists.map(t=>t.name.toLowerCase()));
+        (parsed.therapists||[]).forEach(t => {
+          if (!existingNames.has(t.name.toLowerCase())) { allTherapists.push(t); existingNames.add(t.name.toLowerCase()); }
+        });
+        allCrossRefs = [...allCrossRefs, ...(parsed.crossReferences||[])];
+        allPendingChildren = [...allPendingChildren, ...(parsed.pendingChildren||[])];
+        allChildActivities = [...allChildActivities, ...(parsed.childOnlyActivities||[])];
+      };
+
+      const processImgPart = async (parts, label) => {
+        const { rawText, truncated } = await callGemini(parts, systemPrompt, apiKey);
+        if (truncated) {
+          // Try partial recovery first
+          try {
+            const parsed = parseRaw(rawText, true);
+            mergeResult(parsed);
+            return;
+          } catch(e) {}
+          // If recovery failed and multiple images, retry one by one
+          if (parts.length > 1) {
+            for (let i = 0; i < parts.length; i++) {
+              setUploadStatus({ ok:null, message:`⏳ ${label} — retentando imagem ${i+1}/${parts.length}...` });
+              const { rawText: rt2, truncated: tr2 } = await callGemini([parts[i]], systemPrompt, apiKey);
+              const parsed = parseRaw(rt2, tr2);
+              mergeResult(parsed);
+            }
+          } else {
+            // Single image still truncated — recover what we can
+            const parsed = parseRaw(rawText, true);
+            mergeResult(parsed);
+          }
+        } else {
+          mergeResult(parseRaw(rawText));
+        }
+      };
+
+      // Build all batch parts upfront
+      const allParts = await Promise.all(allFiles.map(toImgPart));
+
       if (useAllAtOnce) {
-        // Single call for ≤4 images
-        const rawText = await callGemini(imageParts, systemPrompt, apiKey);
-        const parsed = parseRaw(rawText);
-        allTherapists = parsed.therapists || [];
-        allCrossRefs = parsed.crossReferences || [];
-        allPendingChildren = parsed.pendingChildren || [];
-        allChildActivities = parsed.childOnlyActivities || [];
+        await processImgPart(allParts, "Processando");
       } else {
-        // Batched: process 4 images at a time, merge results
-        setUploadStatus({ ok:null, message:`⏳ Processando ${batches.length} lotes de imagens...` });
         for (let b = 0; b < batches.length; b++) {
           setUploadStatus({ ok:null, message:`⏳ Processando lote ${b+1} de ${batches.length}...` });
-          const batchParts = await Promise.all(batches[b].map(toImgPart));
-          try {
-            const rawText = await callGemini(batchParts, systemPrompt, apiKey);
-            const parsed = parseRaw(rawText);
-            // Merge — avoid duplicate therapist names
-            const existingNames = new Set(allTherapists.map(t=>t.name.toLowerCase()));
-            (parsed.therapists||[]).forEach(t => {
-              if (!existingNames.has(t.name.toLowerCase())) {
-                allTherapists.push(t);
-                existingNames.add(t.name.toLowerCase());
-              }
-            });
-            allCrossRefs = [...allCrossRefs, ...(parsed.crossReferences||[])];
-            allPendingChildren = [...allPendingChildren, ...(parsed.pendingChildren||[])];
-            allChildActivities = [...allChildActivities, ...(parsed.childOnlyActivities||[])];
-          } catch(batchErr) {
-            throw batchErr;
-          }
+          const batchParts = allParts.slice(b * 2, b * 2 + 2);
+          await processImgPart(batchParts, `Lote ${b+1}/${batches.length}`);
         }
         setUploadStatus(null);
       }
