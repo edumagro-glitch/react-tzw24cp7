@@ -428,7 +428,7 @@ export default function App() {
       };
 
       // Split into batches of 4 images max to avoid token overflow
-      const BATCH = 4;
+      const BATCH = 2;
       const batches = [];
       for (let i = 0; i < allFiles.length; i += BATCH) {
         batches.push(allFiles.slice(i, i + BATCH));
@@ -436,7 +436,7 @@ export default function App() {
 
       const imageParts = await Promise.all(allFiles.map(toImgPart));
       // Use first batch approach but keep all parts for single call if <=4
-      const useAllAtOnce = allFiles.length <= BATCH;
+      const useAllAtOnce = allFiles.length <= 2;
 
       const systemPrompt = `Você é um extrator de dados de agendas de clínica de terapia infantil. Responda APENAS com JSON, sem texto antes ou depois.
 
@@ -558,7 +558,7 @@ Regras finais:
 
   const confirmUpload = () => {
     if (!uploadPreview) return;
-    const { therapists, pendingChildren, childOnlyActivities = [] } = uploadPreview;
+    const { therapists, pendingChildren, childOnlyActivities = [], crossRefs = [] } = uploadPreview;
 
     // Build therapistSchedules + childActivities
     const newSchedules = { SEG:[], TER:[], QUA:[], QUI:[], SEX:[] };
