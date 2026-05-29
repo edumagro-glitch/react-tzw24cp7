@@ -2,8 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 
 const DAYS = ["SEG", "TER", "QUA", "QUI", "SEX"];
 const DAY_LABELS = { SEG: "Segunda", TER: "Terça", QUA: "Quarta", QUI: "Quinta", SEX: "Sexta" };
-const TIME_OPTIONS = ["08:00","08:30","09:00","09:30","10:00","10:30","11:00","11:30","12:00","12:30",
-  "13:00","13:30","14:00","14:30","15:00","15:30","16:00","16:30","17:00","17:30","18:00"];
+const TIME_OPTIONS = ["08:00","09:00","10:00","11:00","13:00","14:00","15:00","16:00","17:00","18:00"];
 
 const initialSubstitutions = [
   { id: 1, patient: "Gael Tanan", time: "15h às 17h", therapist: "Jennifer Felicio", status: "Designated" },
@@ -153,23 +152,15 @@ export default function App() {
   const [bulkForm, setBulkForm] = useState({ patient:"", timeFrom:"08:00", timeTo:"11:00", therapist:"" });
   const [childSearch, setChildSearch] = useState("");
   const [childViewDay, setChildViewDay] = useState("SEG");
-  const [manageTab, setManageTab] = useState("therapists");
-  const [manageSearch, setManageSearch] = useState("");
-  const [confirmRemove, setConfirmRemove] = useState(null);
-  const [editingTherapist, setEditingTherapist] = useState(null);
-  const [skillsDay, setSkillsDay] = useState("SEG");
-  const [skillsSearch, setSkillsSearch] = useState("");
-  const [absencePeriods, setAbsencePeriods] = useState({}); // { "SEG||TherapistName": "manha"|"tarde"|"integral" }
-  const [entryTimeFilter, setEntryTimeFilter] = useState("08:00");
-  const [showMultiSlotModal, setShowMultiSlotModal] = useState(false);
-  const [multiSlotForm, setMultiSlotForm] = useState({ therapist:"", times:[] });
-  const [therapistAgendaFilter, setTherapistAgendaFilter] = useState("");
-  const [therapistAgendaDay, setTherapistAgendaDay] = useState("ALL");
 
   const [uploading, setUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState(null);
   const [uploadPreview, setUploadPreview] = useState(null);
   const fileRef = useRef();
+
+  // ── Absence filters ──
+  const [absenceTherapistSearch, setAbsenceTherapistSearch] = useState("");
+  const [absenceChildSearch, setAbsenceChildSearch] = useState("");
 
   // ── Absences ──
   // absences: { SEG: ["Leticia Alves", "Cassio"], TER: [], ... }
@@ -184,23 +175,67 @@ export default function App() {
     return saved ? JSON.parse(saved) : { SEG:[], TER:[], QUA:[], QUI:[], SEX:[] };
   });
 
-  // Gravando no Local Save automaticamente toda vez que algo mudar
-  const [childActivities, setChildActivities] = useState(() => {
-    const saved = localStorage.getItem("gestor_childActivities");
-    return saved ? JSON.parse(saved) : { SEG:[], TER:[], QUA:[], QUI:[], SEX:[] };
+  // Crianças desligadas — removidas das agendas, terapeutas ficam livres
+  const [dischargedChildren, setDischargedChildren] = useState(() => {
+    const saved = localStorage.getItem("gestor_discharged");
+    return saved ? JSON.parse(saved) : [];
   });
+  const [dischargeInput, setDischargeInput] = useState("");
+  const [showDischargeTab, setShowDischargeTab] = useState(false);
 
+  // Gravando no Local Save automaticamente toda vez que algo mudar
   useEffect(() => { localStorage.setItem("gestor_subs", JSON.stringify(subs)); }, [subs]);
   useEffect(() => { localStorage.setItem("gestor_freeSlots", JSON.stringify(freeSlots)); }, [freeSlots]);
   useEffect(() => { localStorage.setItem("gestor_schedules", JSON.stringify(therapistSchedules)); }, [therapistSchedules]);
   useEffect(() => { localStorage.setItem("gestor_absences", JSON.stringify(absences)); }, [absences]);
-  useEffect(() => { localStorage.setItem("gestor_childActivities", JSON.stringify(childActivities)); }, [childActivities]);
   useEffect(() => { localStorage.setItem("gestor_childAbsences", JSON.stringify(childAbsences)); }, [childAbsences]);
-
+  useEffect(() => { localStorage.setItem("gestor_discharged", JSON.stringify(dischargedChildren)); }, [dischargedChildren]);
+  
   // All known therapist names from freeSlots
   const allTherapists = [...new Set(
     DAYS.flatMap(d => freeSlots[d].map(s => s.therapist))
   )].sort();
+
+  // All known children from schedules
+  const allChildren = [...new Set(
+    DAYS.flatMap(d => (therapistSchedules[d] || []).map(s => s.child))
+  )].sort();
+
+  const dischargeChild = (childName) => {
+    if (!childName.trim()) return;
+    const name = childName.trim();
+    if (dischargedChildren.includes(name)) return;
+    setDischargedChildren(prev => [...prev, name]);
+    // Remove pending subs for this child
+    setSubs(prev => prev.filter(s => s.patient.toLowerCase() !== name.toLowerCase()));
+    // Add therapist free slots for each day this child had sessions
+    setFreeSlots(prevSlots => {
+      const newSlots = { ...prevSlots };
+      DAYS.forEach(day => {
+        const sessions = (therapistSchedules[day] || []).filter(s => s.child.toLowerCase() === name.toLowerCase());
+        sessions.forEach(({ therapist, time }) => {
+          const already = (newSlots[day] || []).some(s => s.therapist === therapist && s.time === time);
+          if (!already) {
+            newSlots[day] = [...(newSlots[day] || []), { id: Date.now() + Math.random(), time, therapist, dischargedChild: name }];
+          }
+        });
+        if (newSlots[day]) newSlots[day].sort((a,b) => a.time.localeCompare(b.time));
+      });
+      return newSlots;
+    });
+  };
+
+  const reactivateChild = (childName) => {
+    setDischargedChildren(prev => prev.filter(n => n !== childName));
+    // Remove the free slots that came from this child's discharge
+    setFreeSlots(prevSlots => {
+      const newSlots = { ...prevSlots };
+      DAYS.forEach(day => {
+        newSlots[day] = (newSlots[day] || []).filter(s => s.dischargedChild !== childName);
+      });
+      return newSlots;
+    });
+  };
 
   const toggleAbsence = (day, name) => {
     setAbsences(prev => {
@@ -214,33 +249,21 @@ export default function App() {
     const absentTherapists = absences[day] || [];
     if (!absentTherapists.length) return;
 
-    const getPeriod = (name) => absencePeriods[`${day}||${name}`] || "integral";
-    const inPeriod = (time, period) => {
-      const h = parseInt(time.split(":")[0], 10);
-      if (period === "manha") return h < 12;
-      if (period === "tarde") return h >= 12;
-      return true;
-    };
-
-    // Remove absent therapist free slots based on period
-    setFreeSlots(prev => {
-      const next = { ...prev };
-      absentTherapists.forEach(name => {
-        const period = getPeriod(name);
-        next[day] = (next[day] || []).filter(s =>
-          s.therapist.toLowerCase() !== name.toLowerCase() || !inPeriod(s.time, period)
-        );
-      });
-      return next;
+    // Find all children that were being attended by absent therapists on this day
+    const affectedSlots = (freeSlots[day] || []).filter(s => {
+      // freeSlots are therapists who are FREE — we need the occupied slots
+      // We look at the therapistSchedule derived from import (stored in therapistSchedules state)
+      return false; // placeholder - handled via therapistSchedules below
     });
 
+    // Use therapistSchedules to find children
     const newPending = [];
     absentTherapists.forEach(therapistName => {
-      const period = getPeriod(therapistName);
       const schedule = therapistSchedules[day] || [];
       schedule
-        .filter(s => s.therapist.toLowerCase() === therapistName.toLowerCase() && inPeriod(s.time, period))
+        .filter(s => s.therapist.toLowerCase() === therapistName.toLowerCase())
         .forEach(({ child, time }) => {
+          // Check not already pending for this child+day
           const alreadyExists = subs.some(s =>
             s.patient.toLowerCase() === child.toLowerCase() &&
             s.day === day && s.status === "Pending"
@@ -261,7 +284,9 @@ export default function App() {
         });
     });
 
-    if (newPending.length > 0) setSubs(prev => [...prev, ...newPending]);
+    if (newPending.length > 0) {
+      setSubs(prev => [...prev, ...newPending]);
+    }
     return newPending.length;
   };
 
@@ -276,56 +301,88 @@ export default function App() {
   };
   const deleteSub = id => setSubs(p=>p.filter(s=>s.id!==id));
 
-  const saveMultiSlot = () => {
-    if (!multiSlotForm.therapist || !multiSlotForm.times.length) return;
-    setFreeSlots(prev => {
-      const next = { ...prev };
-      multiSlotForm.times.forEach(time => {
-        const exists = (next[activeDay]||[]).some(s=>s.therapist===multiSlotForm.therapist&&s.time===time);
-        if (!exists) {
-          next[activeDay] = [...(next[activeDay]||[]), { id:Date.now()+Math.random(), time, therapist:multiSlotForm.therapist }];
-        }
-      });
-      next[activeDay].sort((a,b)=>a.time.localeCompare(b.time));
-      return next;
-    });
-    setMultiSlotForm({ therapist:"", times:[] });
-    setShowMultiSlotModal(false);
-  };
-
   const saveBulk = () => {
     if (!bulkForm.patient || !bulkForm.therapist || !bulkForm.timeFrom || !bulkForm.timeTo) return;
     const from = bulkForm.timeFrom;
     const to = bulkForm.timeTo;
     const patLower = bulkForm.patient.toLowerCase().trim();
-    // Convert all matching pending subs to designated
-    let matched = false;
-    setSubs(prev => prev.map(s => {
-      if (s.status !== "Pending") return s;
-      if (s.patient.toLowerCase().trim() !== patLower) return s;
-      // Check if sub time overlaps the range (compare HH:MM strings)
-      const t = s.time.replace(/h.*/i,"").padStart(5,"0").substring(0,5);
-      const tFmt = t.includes(":") ? t : t.replace(/(\d{2})(\d{2})/,"$1:$2");
-      const inRange = tFmt >= from && tFmt <= to;
-      if (inRange || s.time.includes("às") || s.time === bulkForm.timeFrom) {
-        matched = true;
-        return { ...s, therapist: bulkForm.therapist, status: "Designated" };
+
+    // Build the time string for the designated entry
+    const timeStr = from === to ? from : `${from} às ${to}`;
+
+    // Check if there are matching pending entries for this patient
+    const hasPending = subs.some(s =>
+      s.status === "Pending" && s.patient.toLowerCase().trim() === patLower
+    );
+
+    if (hasPending) {
+      // Check if there's already a Designated entry for same patient+therapist
+      const existingDesignated = subs.find(s =>
+        s.status === "Designated" &&
+        s.patient.toLowerCase().trim() === patLower &&
+        s.therapist.toLowerCase().trim() === bulkForm.therapist.toLowerCase().trim()
+      );
+
+      if (existingDesignated) {
+        // Merge: extend the time range of the existing designated entry, remove all pending
+        setSubs(prev => {
+          const filtered = prev.filter(s => {
+            if (s.id === existingDesignated.id) return false; // remove old designated (will re-add merged)
+            if (s.status === "Pending" && s.patient.toLowerCase().trim() === patLower) return false; // remove pending
+            return true;
+          });
+          // Build merged time string
+          const existFrom = existingDesignated.time.split(" às ")[0].trim();
+          const existTo = existingDesignated.time.split(" às ").pop().trim();
+          const mergedFrom = existFrom < from ? existFrom : from;
+          const mergedTo = existTo > to ? existTo : to;
+          const mergedTime = mergedFrom === mergedTo ? mergedFrom : `${mergedFrom} às ${mergedTo}`;
+          return [...filtered, { ...existingDesignated, time: mergedTime }];
+        });
+      } else {
+        // Remove all pending for this patient, add one Designated
+        setSubs(prev => {
+          const filtered = prev.filter(s =>
+            !(s.status === "Pending" && s.patient.toLowerCase().trim() === patLower)
+          );
+          return [...filtered, {
+            id: Date.now(),
+            patient: bulkForm.patient,
+            time: timeStr,
+            therapist: bulkForm.therapist,
+            status: "Designated",
+            autoCreated: false
+          }];
+        });
       }
-      return s;
-    }));
-    // If no pending matched, create a single new Designated entry
-    if (!matched) {
-      const timeStr = bulkForm.timeFrom === bulkForm.timeTo
-        ? bulkForm.timeFrom
-        : `${bulkForm.timeFrom} às ${bulkForm.timeTo}`;
-      setSubs(prev => [...prev, {
-        id: Date.now(),
-        patient: bulkForm.patient,
-        time: timeStr,
-        therapist: bulkForm.therapist,
-        status: "Designated"
-      }]);
+    } else {
+      // No pending found — check if same patient+therapist designated already exists to merge
+      const existingDesignated = subs.find(s =>
+        s.status === "Designated" &&
+        s.patient.toLowerCase().trim() === patLower &&
+        s.therapist.toLowerCase().trim() === bulkForm.therapist.toLowerCase().trim()
+      );
+      if (existingDesignated) {
+        setSubs(prev => {
+          const filtered = prev.filter(s => s.id !== existingDesignated.id);
+          const existFrom = existingDesignated.time.split(" às ")[0].trim();
+          const existTo = existingDesignated.time.split(" às ").pop().trim();
+          const mergedFrom = existFrom < from ? existFrom : from;
+          const mergedTo = existTo > to ? existTo : to;
+          const mergedTime = mergedFrom === mergedTo ? mergedFrom : `${mergedFrom} às ${mergedTo}`;
+          return [...filtered, { ...existingDesignated, time: mergedTime }];
+        });
+      } else {
+        setSubs(prev => [...prev, {
+          id: Date.now(),
+          patient: bulkForm.patient,
+          time: timeStr,
+          therapist: bulkForm.therapist,
+          status: "Designated"
+        }]);
+      }
     }
+
     setBulkForm({ patient:"", timeFrom:"08:00", timeTo:"11:00", therapist:"" });
     setShowBulkModal(false);
   };
@@ -335,38 +392,6 @@ export default function App() {
     else if (type === "pending") setSubs(p => p.filter(s => s.status !== "Pending"));
     else setSubs([]);
     setShowClearConfirm(null);
-  };
-
-  const renameTherapist = (oldName, newName) => {
-    if (!newName.trim() || newName.trim() === oldName) { setEditingTherapist(null); return; }
-    const n = newName.trim();
-    const lo = oldName.toLowerCase();
-    const ren = arr => arr.map(s => s.therapist && s.therapist.toLowerCase()===lo ? {...s, therapist:n} : s);
-    setFreeSlots(prev => { const nx={...prev}; DAYS.forEach(d=>{nx[d]=ren(nx[d]);}); return nx; });
-    setTherapistSchedules(prev => { const nx={...prev}; DAYS.forEach(d=>{nx[d]=ren(nx[d]);}); return nx; });
-    setChildActivities(prev => { const nx={...prev}; DAYS.forEach(d=>{nx[d]=ren(nx[d]);}); return nx; });
-    setAbsences(prev => { const nx={...prev}; DAYS.forEach(d=>{nx[d]=(nx[d]||[]).map(nm=>nm.toLowerCase()===lo?n:nm);}); return nx; });
-    setSubs(prev => prev.map(s => s.therapist && s.therapist.toLowerCase()===lo ? {...s,therapist:n} : s));
-    setEditingTherapist(null);
-  };
-
-  const removeTherapist = (name) => {
-    const lo = name.toLowerCase();
-    setFreeSlots(prev => { const nx={...prev}; DAYS.forEach(d=>{nx[d]=nx[d].filter(s=>s.therapist.toLowerCase()!==lo);}); return nx; });
-    setTherapistSchedules(prev => { const nx={...prev}; DAYS.forEach(d=>{nx[d]=nx[d].filter(s=>s.therapist.toLowerCase()!==lo);}); return nx; });
-    setChildActivities(prev => { const nx={...prev}; DAYS.forEach(d=>{nx[d]=(nx[d]||[]).filter(a=>a.therapist.toLowerCase()!==lo);}); return nx; });
-    setAbsences(prev => { const nx={...prev}; DAYS.forEach(d=>{nx[d]=(nx[d]||[]).filter(n=>n.toLowerCase()!==lo);}); return nx; });
-    setConfirmRemove(null);
-  };
-
-  const removeChild = (name) => {
-    const lo = name.toLowerCase();
-    setTherapistSchedules(prev => { const nx={...prev}; DAYS.forEach(d=>{nx[d]=nx[d].filter(s=>s.child.toLowerCase()!==lo);}); return nx; });
-    setChildActivities(prev => { const nx={...prev}; DAYS.forEach(d=>{nx[d]=(nx[d]||[]).filter(a=>a.child.toLowerCase()!==lo);}); return nx; });
-    setSubs(prev => prev.filter(s=>s.patient.toLowerCase()!==lo));
-    setChildAbsences(prev => { const nx={...prev}; DAYS.forEach(d=>{nx[d]=(nx[d]||[]).filter(n=>n.toLowerCase()!==lo);}); return nx; });
-    setFreeSlots(prev => { const nx={...prev}; DAYS.forEach(d=>{nx[d]=nx[d].filter(s=>s.childAbsence!==name);}); return nx; });
-    setConfirmRemove(null);
   };
 
   // ── Free Slots CRUD ──
@@ -394,25 +419,6 @@ export default function App() {
     r.readAsDataURL(file);
   });
 
-  const callGemini = async (imageParts, systemPrompt, apiKey) => {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ role: "user", parts: [...imageParts, { text: `Analise as ${imageParts.length} imagem(ns). Retorne o JSON completo. IMPORTANTE: o JSON deve ser conciso — omita campos vazios, use arrays [] para dias sem dados.` }] }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 16384 }
-      })
-    });
-    const data = await response.json();
-    if (data.error) throw new Error(`API: ${data.error.message}`);
-    if (!data.candidates || !data.candidates.length) throw new Error("Resposta vazia da IA.");
-    const finishReason = data.candidates[0].finishReason;
-    const rawText = data.candidates[0].content?.parts?.[0]?.text || "";
-    // Return object with truncation flag instead of throwing
-    return { rawText, truncated: finishReason === "MAX_TOKENS" };
-  };
-
   const handleFiles = async files => {
     if (!files||!files.length) return;
     setUploading(true);
@@ -420,23 +426,13 @@ export default function App() {
     setUploadPreview(null);
 
     try {
-      const allFiles = Array.from(files);
-      const toImgPart = async file => {
-        const b64 = await toBase64(file);
-        const mt = file.type && file.type !== "" ? file.type : (file.name.match(/\.jpe?g$/i) ? "image/jpeg" : "image/png");
-        return { inlineData: { data: b64, mimeType: mt } };
-      };
-
-      // Split into batches of 4 images max to avoid token overflow
-      const BATCH = 2;
-      const batches = [];
-      for (let i = 0; i < allFiles.length; i += BATCH) {
-        batches.push(allFiles.slice(i, i + BATCH));
-      }
-
-      const imageParts = await Promise.all(allFiles.map(toImgPart));
-      // Use first batch approach but keep all parts for single call if <=4
-      const useAllAtOnce = allFiles.length <= 2;
+      const imageParts = await Promise.all(
+        Array.from(files).map(async file => {
+          const b64 = await toBase64(file);
+          const mt = file.type && file.type !== "" ? file.type : (file.name.match(/\.jpe?g$/i) ? "image/jpeg" : "image/png");
+          return { inlineData: { data: b64, mimeType: mt } };
+        })
+      );
 
       const systemPrompt = `Você é um extrator de dados de agendas de clínica de terapia infantil. Responda APENAS com JSON, sem texto antes ou depois.
 
@@ -447,6 +443,17 @@ TIPO A - TERAPEUTA:
 - Colunas: SEG, TER, QUA, QUI, SEX
 - Linhas: horarios HH:MM
 - Celulas: nome do paciente, VAZIA, "AT", ou linha com FUNDO PRETO
+
+CELULAS COM BARRA "/" (paciente original / substituto):
+- Quando uma celula contém "NomeA/ NomeB" ou "NomeA/NomeB", significa que NomeA é o paciente ORIGINAL e NomeB é quem está sendo ATENDIDO no lugar dele.
+- Para occupiedSlots do terapeuta: registrar NomeB (o da DIREITA da barra) como paciente atendido.
+- NomeA (ESQUERDA) só é atendido nos horários em que a célula NÃO tem barra (célula simples com apenas NomeA).
+- Exemplo: se 08:00, 08:30, 09:00, 09:30 têm "Davi" simples e 10:00, 10:30, 11:00, 11:30 têm "Davi/ Guilherme", então:
+  - Davi é atendido de 08:00 a 09:30 (horários sem barra)
+  - Guilherme é atendido de 10:00 a 11:30 (horários COM barra, usar o nome APÓS a barra)
+  - Davi NAO é considerado atendido nos horários com barra
+- Para pendencias: usar o nome APÓS a barra (DIREITA) como paciente daquele horário.
+- NUNCA incluir "NomeA/" com a barra no occupiedSlots. Limpar o nome: remover tudo antes e incluindo a barra.
 
 TIPO B - PACIENTE/CRIANCA:
 - Cabecalho: "PACIENTE - NOME"
@@ -481,150 +488,146 @@ Regras finais:
 - absentDays: dias com linha preta
 - Sem agendas de criancas: pendingChildren:[], crossReferences:[]
 - Sem agendas de terapeutas: therapists:[]
-- occupiedSlots: para cada terapeuta, os horarios em que ele ESTA ATENDENDO um paciente (nao livre, nao AT, nao linha preta). Formato: {"SEG":[{"time":"08:00","child":"Nome Paciente"}], ...}
-- childOnlyActivities: array de { child, day, time, activity } para TODAS as atividades encontradas nas agendas TIPO B, independente de ter terapeuta ou não. Use este campo sempre que houver agendas de crianças.
+- occupiedSlots: para cada terapeuta, os horarios em que ele ESTA ATENDENDO um paciente (nao livre, nao AT, nao linha preta). Em celulas com barra "NomeA/ NomeB", registrar APENAS NomeB (pos-barra) como child naquele horario. Celulas sem barra: registrar o nome completo. Formato: {"SEG":[{"time":"08:00","child":"Nome Paciente"}], ...}
 - NUNCA escreva texto fora do JSON`;
 
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
       if (!apiKey) throw new Error("Chave de API da IA não encontrada nas configurações.");
 
-      const extractJSON = (str, allowPartial = false) => {
-        const start = str.indexOf("{");
-        if (start === -1) throw new Error("NO_JSON");
-        let depth = 0;
-        for (let i = start; i < str.length; i++) {
-          if (str[i] === "{") depth++;
-          else if (str[i] === "}") { depth--; if (depth === 0) return str.slice(start, i+1); }
-        }
-        if (!allowPartial) throw new Error("JSON incompleto");
-        // Try to recover truncated JSON by closing open structures
-        let partial = str.slice(start);
-        // Remove trailing incomplete key/value
-        partial = partial.replace(/,?\s*"[^"]*"\s*:\s*[^,}\]]*$/, "");
-        partial = partial.replace(/,\s*$/, "");
-        // Close open arrays and objects
-        let od = 0, ad = 0;
-        for (const ch of partial) { if(ch==="{") od++; else if(ch==="}") od--; else if(ch==="[") ad++; else if(ch==="]") ad--; }
-        partial += "]".repeat(Math.max(0, ad)) + "}".repeat(Math.max(0, od));
-        try { JSON.parse(partial); return partial; } catch(e) { throw new Error("JSON incompleto mesmo após recuperação"); }
-      };
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents: [{
+            role: "user",
+            parts: [
+              ...imageParts,
+              { text: `Analise as ${files.length} imagem(ns). Identifique terapeutas e pacientes, aplique todas as regras e retorne o JSON completo.` }
+            ]
+          }],
+          generationConfig: { temperature: 0.1, maxOutputTokens: 8192 }
+        })
+      });
 
-      const parseRaw = (rawText, allowPartial = false) => {
-        if (!rawText || !rawText.includes("{")) return { therapists:[], crossReferences:[], pendingChildren:[], childOnlyActivities:[] };
-        const jsonStr = extractJSON(rawText, allowPartial);
-        return JSON.parse(jsonStr);
-      };
+      const data = await response.json();
 
-      let allTherapists = [], allCrossRefs = [], allPendingChildren = [], allChildActivities = [];
+      if (data.error) throw new Error(`API: ${data.error.message}`);
+      if (!data.candidates || data.candidates.length === 0) throw new Error(`Resposta vazia da IA.`);
 
-      const mergeResult = (parsed) => {
-        const existingNames = new Set(allTherapists.map(t=>t.name.toLowerCase()));
-        (parsed.therapists||[]).forEach(t => {
-          if (!existingNames.has(t.name.toLowerCase())) { allTherapists.push(t); existingNames.add(t.name.toLowerCase()); }
-        });
-        allCrossRefs = [...allCrossRefs, ...(parsed.crossReferences||[])];
-        allPendingChildren = [...allPendingChildren, ...(parsed.pendingChildren||[])];
-        allChildActivities = [...allChildActivities, ...(parsed.childOnlyActivities||[])];
-      };
+      const rawText = data.candidates[0].content.parts[0].text;
 
-      const processImgPart = async (parts, label) => {
-        const { rawText, truncated } = await callGemini(parts, systemPrompt, apiKey);
-        if (truncated) {
-          // Try partial recovery first
-          try {
-            const parsed = parseRaw(rawText, true);
-            mergeResult(parsed);
-            return;
-          } catch(e) {}
-          // If recovery failed and multiple images, retry one by one
-          if (parts.length > 1) {
-            for (let i = 0; i < parts.length; i++) {
-              setUploadStatus({ ok:null, message:`⏳ ${label} — retentando imagem ${i+1}/${parts.length}...` });
-              const { rawText: rt2, truncated: tr2 } = await callGemini([parts[i]], systemPrompt, apiKey);
-              const parsed = parseRaw(rt2, tr2);
-              mergeResult(parsed);
-            }
-          } else {
-            // Single image still truncated — recover what we can
-            const parsed = parseRaw(rawText, true);
-            mergeResult(parsed);
-          }
-        } else {
-          mergeResult(parseRaw(rawText));
-        }
-      };
-
-      // Build all batch parts upfront
-      const allParts = await Promise.all(allFiles.map(toImgPart));
-
-      if (useAllAtOnce) {
-        await processImgPart(allParts, "Processando");
-      } else {
-        for (let b = 0; b < batches.length; b++) {
-          setUploadStatus({ ok:null, message:`⏳ Processando lote ${b+1} de ${batches.length}...` });
-          const batchParts = allParts.slice(b * 2, b * 2 + 2);
-          await processImgPart(batchParts, `Lote ${b+1}/${batches.length}`);
-        }
-        setUploadStatus(null);
+      // Detect case where only patient agendas were uploaded
+      const lower = rawText.toLowerCase();
+      const noTherapists = !rawText.includes("{") && (
+        lower.includes("tipo b") || lower.includes("não há") ||
+        lower.includes("nenhuma agenda tipo a") || lower.includes("apenas agenda")
+      );
+      if (noTherapists) {
+        setUploading(false);
+        setUploadStatus({ ok:false, message:"⚠️ Só foram detectadas agendas de crianças. Inclua também as agendas dos terapeutas (ATC) no mesmo upload." });
+        return;
       }
 
-      const therapists = allTherapists;
-      const crossRefs = allCrossRefs;
-      const pendingChildren = allPendingChildren;
+      // ── Robust JSON extraction with repair ──
+      const extractAndRepairJSON = (str) => {
+        // 1. Strip markdown code fences
+        str = str.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
 
-      setUploadPreview({ therapists, crossRefs, pendingChildren, childOnlyActivities: allChildActivities });
+        const start = str.indexOf("{");
+        if (start === -1) {
+          setUploadStatus({ ok:false, message:"⚠️ Só foram detectadas agendas de crianças. Inclua também as agendas dos terapeutas (ATC)." });
+          throw new Error("NO_JSON");
+        }
+
+        // 2. Extract the outermost { } block
+        let depth = 0, end = -1;
+        for (let i = start; i < str.length; i++) {
+          if (str[i] === "{") depth++;
+          else if (str[i] === "}") { depth--; if (depth === 0) { end = i; break; } }
+        }
+
+        let jsonStr = end !== -1 ? str.slice(start, end + 1) : str.slice(start);
+
+        // 3. Try parsing as-is first
+        try { return JSON.parse(jsonStr); } catch(_) {}
+
+        // 4. Sanitize common issues:
+        // 4a. Remove control characters (except \n \r \t)
+        jsonStr = jsonStr.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
+        // 4b. Fix unescaped backslashes inside strings (not followed by valid escape chars)
+        jsonStr = jsonStr.replace(/\\(?!["\\/bfnrtu])/g, "\\\\");
+        // 4c. Fix trailing commas before ] or }
+        jsonStr = jsonStr.replace(/,\s*([\]}])/g, "$1");
+        // 4d. If truncated (no closing brace), attempt to close open arrays/objects
+        if (end === -1) {
+          let opens = [], inStr = false, esc = false;
+          for (let i = 0; i < jsonStr.length; i++) {
+            const c = jsonStr[i];
+            if (esc) { esc = false; continue; }
+            if (c === "\\") { esc = true; continue; }
+            if (c === '"') { inStr = !inStr; continue; }
+            if (!inStr) {
+              if (c === "{" || c === "[") opens.push(c === "{" ? "}" : "]");
+              else if (c === "}" || c === "]") opens.pop();
+            }
+          }
+          // Close any unclosed string first
+          if (inStr) jsonStr += '"';
+          // Close unclosed objects/arrays
+          jsonStr += opens.reverse().join("");
+        }
+        // 4e. Final trailing comma fix after repair
+        jsonStr = jsonStr.replace(/,\s*([\]}])/g, "$1");
+
+        try { return JSON.parse(jsonStr); } catch(e2) {
+          throw new Error("JSON inválido da IA — tente novamente com menos imagens por vez. Detalhe: " + e2.message);
+        }
+      };
+
+      const parsed = extractAndRepairJSON(rawText);
+
+      const therapists = parsed.therapists || (Array.isArray(parsed) ? parsed : []);
+      const crossRefs = parsed.crossReferences || [];
+      const pendingChildren = parsed.pendingChildren || [];
+
+      setUploadPreview({ therapists, crossRefs, pendingChildren });
       setUploading(false);
 
     } catch(err) {
       setUploading(false);
-      setUploadStatus({ ok:false, message:"Erro ao processar: "+err.message });
+      if (err.message !== "NO_JSON") setUploadStatus({ ok:false, message: "Erro ao processar: " + err.message });
     }
   };
 
   const confirmUpload = () => {
     if (!uploadPreview) return;
-    const { therapists, pendingChildren, childOnlyActivities = [], crossRefs = [] } = uploadPreview;
+    const { therapists, pendingChildren } = uploadPreview;
 
-    // Build therapistSchedules + childActivities
+    // Build therapistSchedules: occupied slots per day (therapist→child mappings)
     const newSchedules = { SEG:[], TER:[], QUA:[], QUI:[], SEX:[] };
-    const newActivities = { SEG:[], TER:[], QUA:[], QUI:[], SEX:[] };
+
+    // Helper: extract the real child name from slash notation ("NomeA/ NomeB" → "NomeB")
+    const cleanChildName = (raw) => {
+      if (!raw) return raw;
+      if (raw.includes("/")) {
+        const right = raw.split("/").pop().trim();
+        return right || raw.trim();
+      }
+      return raw.trim();
+    };
+
     therapists.forEach(({ name, freeSlots: fs, occupiedSlots }) => {
+      // occupiedSlots may be provided, otherwise we can't reconstruct from freeSlots alone
+      // Store what we know from the raw therapist data
       if (occupiedSlots) {
         DAYS.forEach(day => {
-          (occupiedSlots[day]||[]).forEach(({ time, child, activity }) => {
-            newSchedules[day].push({ therapist: name, child, time });
-            if (child) newActivities[day].push({ child, time, activity: activity||"", therapist: name });
+          (occupiedSlots[day]||[]).forEach(({ time, child }) => {
+            const cleanChild = cleanChildName(child);
+            if (cleanChild) newSchedules[day].push({ therapist: name, child: cleanChild, time });
           });
         });
       }
-    });
-    crossRefs.forEach(({ child, therapist, day, time, activity }) => {
-      if (newActivities[day] && !newActivities[day].some(a=>a.child===child&&a.time===time))
-        newActivities[day].push({ child, time, activity: activity||"", therapist: therapist||"Especialista" });
-    });
-    pendingChildren.forEach(({ child, day, time, activity }) => {
-      if (newActivities[day] && !newActivities[day].some(a=>a.child===child&&a.time===time))
-        newActivities[day].push({ child, time, activity: activity||"", therapist: "" });
-    });
-    // Merge childOnlyActivities (from TIPO B only uploads)
-    const childOnlyByDay = { SEG:[], TER:[], QUA:[], QUI:[], SEX:[] };
-    childOnlyActivities.forEach(({ child, day, time, activity }) => {
-      if (childOnlyByDay[day] && !newActivities[day].some(a=>a.child===child&&a.time===time)) {
-        childOnlyByDay[day].push({ child, time, activity: activity||"", therapist:"" });
-      }
-    });
-    DAYS.forEach(day => {
-      newActivities[day] = [...newActivities[day], ...childOnlyByDay[day]];
-    });
-
-    setChildActivities(prev => {
-      const merged = {...prev};
-      DAYS.forEach(day => {
-        const nc = new Set(newActivities[day].map(a=>a.child.toLowerCase()));
-        merged[day] = [...prev[day].filter(a=>!nc.has(a.child.toLowerCase())), ...newActivities[day]];
-        merged[day].sort((a,b)=>a.time.localeCompare(b.time));
-      });
-      return merged;
     });
     // Merge with existing (keep schedules from previous imports)
     setTherapistSchedules(prev => {
@@ -659,8 +662,9 @@ Regras finais:
     if (pendingChildren.length > 0) {
       const grouped = {};
       pendingChildren.forEach(({ child, day, time, activity }) => {
-        const key = `${child}||${day}`;
-        if (!grouped[key]) grouped[key] = { child, day, times:[], activities:[] };
+        const cleanChild = cleanChildName(child);
+        const key = `${cleanChild}||${day}`;
+        if (!grouped[key]) grouped[key] = { child: cleanChild, day, times:[], activities:[] };
         grouped[key].times.push(time);
         grouped[key].activities.push(activity);
       });
@@ -698,9 +702,7 @@ Regras finais:
     const pendingMsg = pendingChildren.length>0 ? ` · ${Object.keys(
       pendingChildren.reduce((a,c)=>({...a,[`${c.child}||${c.day}`]:1}),{})
     ).length} pendência(s) criadas automaticamente` : "";
-    const childActivitiesCount = childOnlyActivities.length;
-    const childMsg = childActivitiesCount > 0 && !therapists.length ? `✅ Agendas de crianças importadas (${childActivitiesCount} atividades registradas)` : `✅ ${therapists.length} terapeuta(s) importado(s)${pendingMsg}${childActivitiesCount>0?` · ${childActivitiesCount} atividade(s) de crianças`:""}`;
-    setUploadStatus({ ok:true, message: childMsg });
+    setUploadStatus({ ok:true, message:`✅ ${therapists.length} terapeuta(s) importado(s)${pendingMsg}` });
     setTimeout(()=>setUploadStatus(null), 5000);
   };
 
@@ -746,28 +748,21 @@ Regras finais:
                 }}>{label}</button>
               ))}
             </div>
-            <div style={{ display:"flex",gap:"0.3rem",overflowX:"auto",paddingBottom:"0.1rem" }}>
+            <div style={{ display:"flex",gap:"0.4rem" }}>
               {[
-                ["absent", (absences[absenceDay]||[]).length>0 ? `📌 Faltas` : "📌 Faltas"],
+                ["absent", (absences[absenceDay]||[]).length>0 ? `📌 Faltas (${DAYS.reduce((a,d)=>a+(absences[d]||[]).length,0)})` : "📌 Faltas"],
+                ["discharged", dischargedChildren.length>0 ? `🚪 Desligadas (${dischargedChildren.length})` : "🚪 Desligadas"],
                 ["children","👶 Crianças"],
-                ["entries","🗺️ Entradas"],
-                ["agenda","📅 Agenda"],
-                ["upload","📋 Importar"],
-                ["manage","⚙️ Gerenciar"]
-              ].map(([key,label])=>{
-                const colors = { absent:"#f87171", children:"#a78bfa", entries:"#34d399", agenda:"#60a5fa", manage:"#94a3b8", upload:"#3b82f6" };
-                const borders = { absent:"#dc2626", children:"#7c3aed", entries:"#10b981", agenda:"#2563eb", manage:"#64748b", upload:"#3b82f6" };
-                return (
-                  <button key={key} onClick={()=>setTab(key)} style={{
-                    flexShrink:0,padding:"0.5rem 0.55rem",borderRadius:"8px",border:"none",cursor:"pointer",
-                    background:tab===key?"#1e2d45":"transparent",
-                    color:tab===key?(colors[key]||"#3b82f6"):"#6b7a99",
-                    fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.62rem",
-                    borderBottom:tab===key?`2px solid ${borders[key]||"#3b82f6"}`:"2px solid transparent",
-                    whiteSpace:"nowrap"
-                  }}>{label}</button>
-                );
-              })}
+                ["upload","📋 Importar"]
+              ].map(([key,label])=>(
+                <button key={key} onClick={()=>setTab(key)} style={{
+                  flex:1,padding:"0.55rem 0.4rem",borderRadius:"10px",border:"none",cursor:"pointer",
+                  background:tab===key?"#1e2d45":"transparent",
+                  color:tab===key?(key==="absent"?"#f87171":key==="discharged"?"#fb923c":key==="children"?"#a78bfa":"#3b82f6"):"#6b7a99",
+                  fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.65rem",
+                  borderBottom:tab===key?`2px solid ${key==="absent"?"#dc2626":key==="discharged"?"#f97316":key==="children"?"#7c3aed":"#3b82f6"}`:"2px solid transparent"
+                }}>{label}</button>
+              ))}
             </div>
           </div>
         </div>
@@ -839,10 +834,7 @@ Regras finais:
 
             <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1rem" }}>
               <span style={{ fontWeight:700,fontSize:"0.85rem" }}>{DAY_LABELS[activeDay]}</span>
-              <div style={{ display:"flex",gap:"0.4rem" }}>
-                <Btn onClick={()=>{ setMultiSlotForm({therapist:"",times:[]}); setShowMultiSlotModal(true); }} small color="#16a34a">⚡ Múltiplos</Btn>
-                <Btn onClick={openAddSlot} small>+ Adicionar</Btn>
-              </div>
+              <Btn onClick={openAddSlot} small>+ Adicionar</Btn>
             </div>
 
             {Object.keys(slotsByTime).length===0
@@ -981,7 +973,7 @@ Regras finais:
 
                 {/* Per-therapist preview */}
                 <div style={{ fontWeight:700,fontSize:"0.82rem",color:"#e8f0fe",marginBottom:"0.75rem" }}>
-  {uploadPreview.therapists.length > 0 ? `${uploadPreview.therapists.length} terapeuta(s) — revise e confirme:` : "Agendas de crianças detectadas — confirme para importar atividades:"}
+                  {uploadPreview.therapists.length} terapeuta(s) — revise e confirme:
                 </div>
                 {uploadPreview.therapists.map((t,i)=>{
                   const totalFree = DAYS.reduce((acc,d)=>acc+(t.freeSlots[d]||[]).length,0);
@@ -1095,6 +1087,24 @@ Regras finais:
                 Terapeutas em {DAY_LABELS[absenceDay]}
               </div>
 
+              {allTherapists.length > 0 && (
+                <div style={{ position:"relative",marginBottom:"0.75rem" }}>
+                  <input
+                    value={absenceTherapistSearch}
+                    onChange={e=>setAbsenceTherapistSearch(e.target.value)}
+                    placeholder="🔍  Filtrar terapeuta..."
+                    style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"10px",
+                      padding:"0.55rem 0.9rem",color:"#e8f0fe",fontSize:"0.82rem",outline:"none",
+                      fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box" }}
+                  />
+                  {absenceTherapistSearch && (
+                    <button onClick={()=>setAbsenceTherapistSearch("")}
+                      style={{ position:"absolute",right:"0.75rem",top:"50%",transform:"translateY(-50%)",
+                        background:"none",border:"none",color:"#6b7a99",cursor:"pointer",fontSize:"1rem" }}>✕</button>
+                  )}
+                </div>
+              )}
+
               {allTherapists.length === 0 ? (
                 <div style={{ textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"2rem 1rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548" }}>
                   <div style={{ fontSize:"1.5rem",marginBottom:"0.5rem" }}>📋</div>
@@ -1103,51 +1113,34 @@ Regras finais:
                 </div>
               ) : (
                 <div>
-                  {allTherapists.map(name => {
+                  {allTherapists
+                    .filter(name => !absenceTherapistSearch.trim() || name.toLowerCase().includes(absenceTherapistSearch.toLowerCase()))
+                    .map(name => {
                     const isAbsent = (absences[absenceDay]||[]).includes(name);
                     const daySchedule = (therapistSchedules[absenceDay]||[]).filter(s=>s.therapist.toLowerCase()===name.toLowerCase());
                     return (
-                      <div key={name} style={{ marginBottom:"0.4rem" }}>
-                        <div onClick={()=>toggleAbsence(absenceDay, name)}
-                          style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0.65rem 1rem",borderRadius:isAbsent?"10px 10px 0 0":"10px",cursor:"pointer",
-                            background:isAbsent?"#2a0a0a":"#0d1420",
-                            border:`1px solid ${isAbsent?"#dc2626":"#1e2d45"}`,
-                            borderBottom:isAbsent?"1px solid #3d1010":undefined,
-                            transition:"all 0.15s" }}>
-                          <div>
-                            <div style={{ fontWeight:600,fontSize:"0.875rem",color:isAbsent?"#f87171":"#e8f0fe" }}>{name}</div>
-                            {daySchedule.length>0 && (
-                              <div style={{ fontSize:"0.72rem",color:"#6b7a99",marginTop:"0.15rem" }}>
-                                {daySchedule.length} criança{daySchedule.length!==1?"s":""}: {daySchedule.map(s=>s.child).join(", ")}
-                              </div>
-                            )}
-                            {daySchedule.length===0 && (
-                              <div style={{ fontSize:"0.72rem",color:"#4a5a70",marginTop:"0.15rem" }}>sem agenda nesse dia</div>
-                            )}
-                          </div>
-                          <div style={{ width:"22px",height:"22px",borderRadius:"6px",flexShrink:0,
-                            background:isAbsent?"#dc2626":"#1e2d45",
-                            border:`2px solid ${isAbsent?"#dc2626":"#2a3548"}`,
-                            display:"flex",alignItems:"center",justifyContent:"center",fontSize:"0.75rem" }}>
-                            {isAbsent?"✓":""}
-                          </div>
+                      <div key={name} onClick={()=>toggleAbsence(absenceDay, name)}
+                        style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0.75rem 1rem",marginBottom:"0.4rem",borderRadius:"10px",cursor:"pointer",
+                          background:isAbsent?"#2a0a0a":"#0d1420",
+                          border:`1px solid ${isAbsent?"#dc2626":"#1e2d45"}`,
+                          transition:"all 0.15s" }}>
+                        <div>
+                          <div style={{ fontWeight:600,fontSize:"0.875rem",color:isAbsent?"#f87171":"#e8f0fe" }}>{name}</div>
+                          {daySchedule.length>0 && (
+                            <div style={{ fontSize:"0.72rem",color:"#6b7a99",marginTop:"0.15rem" }}>
+                              {daySchedule.length} criança{daySchedule.length!==1?"s":""}: {daySchedule.map(s=>s.child).join(", ")}
+                            </div>
+                          )}
+                          {daySchedule.length===0 && (
+                            <div style={{ fontSize:"0.72rem",color:"#4a5a70",marginTop:"0.15rem" }}>sem agenda nesse dia</div>
+                          )}
                         </div>
-                        {isAbsent && (
-                          <div style={{ display:"flex",gap:"0",background:"#1a0808",border:"1px solid #dc2626",borderTop:"none",borderRadius:"0 0 10px 10px",overflow:"hidden" }}>
-                            {[["manha","☀️ Manhã"],["tarde","🌙 Tarde"],["integral","📅 Integral"]].map(([p,label])=>{
-                              const cur = absencePeriods[`${absenceDay}||${name}`]||"integral";
-                              return (
-                                <button key={p} onClick={e=>{e.stopPropagation();setAbsencePeriods(prev=>({...prev,[`${absenceDay}||${name}`]:p}));}}
-                                  style={{ flex:1,padding:"0.35rem 0.25rem",border:"none",borderRight:p!=="integral"?"1px solid #3d1010":"none",
-                                    background:cur===p?"#dc2626":"transparent",
-                                    color:cur===p?"#fff":"#9a6060",
-                                    fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.65rem",cursor:"pointer" }}>
-                                  {label}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
+                        <div style={{ width:"22px",height:"22px",borderRadius:"6px",flexShrink:0,
+                          background:isAbsent?"#dc2626":"#1e2d45",
+                          border:`2px solid ${isAbsent?"#dc2626":"#2a3548"}`,
+                          display:"flex",alignItems:"center",justifyContent:"center",fontSize:"0.75rem" }}>
+                          {isAbsent?"✓":""}
+                        </div>
                       </div>
                     );
                   })}
@@ -1211,7 +1204,28 @@ Regras finais:
                   </div>
                 );
 
-                return childrenToday.map(child => {
+                const filtered = childrenToday.filter(c =>
+                  !absenceChildSearch.trim() || c.toLowerCase().includes(absenceChildSearch.toLowerCase())
+                );
+
+                return (
+                  <>
+                    <div style={{ position:"relative",marginBottom:"0.75rem" }}>
+                      <input
+                        value={absenceChildSearch}
+                        onChange={e=>setAbsenceChildSearch(e.target.value)}
+                        placeholder="🔍  Filtrar criança..."
+                        style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"10px",
+                          padding:"0.55rem 0.9rem",color:"#e8f0fe",fontSize:"0.82rem",outline:"none",
+                          fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box" }}
+                      />
+                      {absenceChildSearch && (
+                        <button onClick={()=>setAbsenceChildSearch("")}
+                          style={{ position:"absolute",right:"0.75rem",top:"50%",transform:"translateY(-50%)",
+                            background:"none",border:"none",color:"#6b7a99",cursor:"pointer",fontSize:"1rem" }}>✕</button>
+                      )}
+                    </div>
+                    {filtered.map(child => {
                   const isAbsent = (childAbsences[absenceDay] || []).includes(child);
                   const slots = (therapistSchedules[absenceDay] || []).filter(s => s.child === child);
 
@@ -1270,9 +1284,85 @@ Regras finais:
                       </div>
                     </div>
                   );
-                });
+                })}
+                  </>
+                );
               })()}
             </div>
+          </div>
+        )}
+
+
+        {/* ── CRIANÇAS DESLIGADAS ── */}
+        {tab==="discharged" && (
+          <div style={{ padding:"1.25rem" }}>
+            <div style={{ fontWeight:700,fontSize:"0.85rem",marginBottom:"0.35rem" }}>Crianças Desligadas</div>
+            <div style={{ fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1.25rem",lineHeight:1.5 }}>
+              Informe o nome da criança desligada. Ela sai da agenda e os terapeutas ficam com horário livre.
+            </div>
+
+            {/* Add discharge input */}
+            <div style={{ display:"flex",gap:"0.5rem",marginBottom:"1.25rem" }}>
+              <div style={{ flex:1,position:"relative" }}>
+                <select
+                  value={dischargeInput}
+                  onChange={e=>setDischargeInput(e.target.value)}
+                  style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"10px",
+                    padding:"0.65rem 0.9rem",color:dischargeInput?"#e8f0fe":"#3a4a60",fontSize:"0.875rem",outline:"none",
+                    fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box",cursor:"pointer" }}>
+                  <option value="">Selecionar criança...</option>
+                  {allChildren.filter(c=>!dischargedChildren.includes(c)).map(c=>(
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+              <button onClick={()=>{ if(dischargeInput){ dischargeChild(dischargeInput); setDischargeInput(""); } }}
+                disabled={!dischargeInput}
+                style={{ padding:"0.65rem 1rem",background:dischargeInput?"#f97316":"#1e2d45",border:"none",borderRadius:"10px",
+                  color:dischargeInput?"#fff":"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:700,fontSize:"0.82rem",cursor:dischargeInput?"pointer":"not-allowed",flexShrink:0 }}>
+                Desligar
+              </button>
+            </div>
+
+            {/* List of discharged children */}
+            {dischargedChildren.length === 0 ? (
+              <div style={{ textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"2rem 1rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548" }}>
+                <div style={{ fontSize:"1.5rem",marginBottom:"0.5rem" }}>🚪</div>
+                Nenhuma criança desligada registrada
+              </div>
+            ) : (
+              <div>
+                <div style={{ fontSize:"0.72rem",fontWeight:700,color:"#6b7a99",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"0.75rem" }}>
+                  {dischargedChildren.length} criança(s) desligada(s)
+                </div>
+                {dischargedChildren.map(child => {
+                  const freedSlots = DAYS.flatMap(d =>
+                    (therapistSchedules[d]||[]).filter(s=>s.child===child).map(s=>({...s,day:d}))
+                  );
+                  return (
+                    <div key={child} style={{ background:"#0d1420",border:"1px solid #7c2d12",borderLeft:"3px solid #f97316",borderRadius:"10px",padding:"0.85rem 1rem",marginBottom:"0.5rem",display:"flex",justifyContent:"space-between",alignItems:"flex-start" }}>
+                      <div>
+                        <div style={{ fontWeight:600,fontSize:"0.875rem",color:"#fed7aa",marginBottom:"0.2rem" }}>{child}</div>
+                        {freedSlots.length > 0 ? (
+                          <div style={{ fontSize:"0.72rem",color:"#6b7a99" }}>
+                            {freedSlots.slice(0,3).map((s,i)=>(
+                              <span key={i} style={{ marginRight:"0.5rem" }}>{DAY_LABELS[s.day]} {s.time} · {s.therapist}</span>
+                            ))}
+                            {freedSlots.length>3&&<span style={{ color:"#4a5a70" }}>+{freedSlots.length-3} mais</span>}
+                          </div>
+                        ) : (
+                          <div style={{ fontSize:"0.72rem",color:"#4a5a70" }}>Terapeutas agora livres nos horários dessa criança</div>
+                        )}
+                      </div>
+                      <button onClick={()=>reactivateChild(child)}
+                        style={{ background:"#1e2d45",border:"none",borderRadius:"6px",color:"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.7rem",cursor:"pointer",padding:"0.3rem 0.6rem",flexShrink:0,marginLeft:"0.5rem" }}>
+                        ↩ Reativar
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -1360,318 +1450,19 @@ Regras finais:
                       {multiTherapist && !isAbsent && <span style={{ fontSize:"0.65rem",background:"#2e1065",color:"#a78bfa",borderRadius:"5px",padding:"0.1rem 0.4rem",fontWeight:600 }}>+{therapists.length} terapeutas</span>}
                     </div>
                     <div style={{ display:"flex",flexDirection:"column",gap:"0.35rem" }}>
-                      {childSlots.map((s,i)=>{
-                        const actEntry = (childActivities[childViewDay]||[]).find(a=>a.child===child&&a.time===s.time);
-                        const act = actEntry?.activity||"";
-                        return (
-                          <div key={i} style={{ display:"flex",alignItems:"center",gap:"0.5rem",flexWrap:"wrap" }}>
-                            <span style={{ fontFamily:"'DM Mono',monospace",fontSize:"0.78rem",color:"#3b82f6",
-                              background:"#1e2d45",borderRadius:"5px",padding:"0.12rem 0.45rem",
-                              minWidth:"52px",textAlign:"center",flexShrink:0 }}>{s.time}</span>
-                            <span style={{ fontSize:"0.82rem",color:"#cbd5e1",flexShrink:0 }}>{s.therapist}</span>
-                            {act&&<span style={{ fontSize:"0.72rem",color:"#a78bfa",background:"#1a0a2e",borderRadius:"5px",padding:"0.1rem 0.4rem" }}>{act}</span>}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              });
-            })()}
-          </div>
-        )}
-
-
-
-        {/* ── ENTRADAS ── */}
-        {tab==="entries" && (
-          <div style={{ padding:"1.25rem" }}>
-            <div style={{ fontWeight:700,fontSize:"0.85rem",marginBottom:"0.35rem" }}>Mapeamento de Entradas</div>
-            <div style={{ fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1.25rem",lineHeight:1.5 }}>
-              Filtre por horário e veja quais crianças têm atividade a partir daquele momento.
-            </div>
-            <div style={{ marginBottom:"1rem" }}>
-              <label style={{ display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.5rem" }}>Horário de entrada</label>
-              <select value={entryTimeFilter} onChange={e=>setEntryTimeFilter(e.target.value)}
-                style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"10px",
-                  padding:"0.65rem 0.9rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",
-                  fontFamily:"'DM Sans',sans-serif",cursor:"pointer" }}>
-                {TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
-              </select>
-            </div>
-            {DAYS.map(day=>{
-              const slots = (therapistSchedules[day]||[]).filter(s=>s.time>=entryTimeFilter);
-              const children = [...new Set(slots.map(s=>s.child))].sort();
-              if(!children.length) return null;
-              return (
-                <div key={day} style={{ marginBottom:"1.25rem" }}>
-                  <div style={{ display:"flex",alignItems:"center",gap:"0.5rem",marginBottom:"0.6rem" }}>
-                    <span style={{ fontSize:"0.72rem",fontWeight:700,color:"#34d399",background:"#0a2e1a",borderRadius:"6px",padding:"0.2rem 0.6rem",textTransform:"uppercase",letterSpacing:"0.07em" }}>{DAY_LABELS[day]}</span>
-                    <span style={{ fontSize:"0.7rem",color:"#6b7a99" }}>{children.length} criança(s)</span>
-                    <div style={{ flex:1,height:"1px",background:"#1e2d45" }}/>
-                  </div>
-                  {children.map(child=>{
-                    const childSlots = slots.filter(s=>s.child===child).sort((a,b)=>a.time.localeCompare(b.time));
-                    const firstTime = childSlots[0]?.time;
-                    return (
-                      <div key={child} style={{ display:"flex",alignItems:"center",gap:"0.6rem",padding:"0.6rem 0.85rem",marginBottom:"0.35rem",background:"#0d1420",border:"1px solid #1e2d45",borderRadius:"8px" }}>
-                        <span style={{ fontFamily:"'DM Mono',monospace",fontSize:"0.78rem",color:"#34d399",background:"#0a2e1a",borderRadius:"5px",padding:"0.12rem 0.45rem",minWidth:"52px",textAlign:"center",flexShrink:0 }}>{firstTime}</span>
-                        <span style={{ fontSize:"0.85rem",color:"#e8f0fe",flex:1 }}>{child}</span>
-                        <span style={{ fontSize:"0.72rem",color:"#6b7a99" }}>{childSlots.length} horário(s)</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })}
-            {DAYS.every(day=>(therapistSchedules[day]||[]).filter(s=>s.time>=entryTimeFilter).length===0) && (
-              <div style={{ textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"2rem 1rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548" }}>
-                <div style={{ fontSize:"1.5rem",marginBottom:"0.5rem" }}>🗺️</div>
-                Nenhuma criança com entrada a partir das {entryTimeFilter}
-                <div style={{ fontSize:"0.72rem",marginTop:"0.4rem",color:"#4a5a70" }}>Tente um horário anterior ou importe as agendas na aba 📋</div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── AGENDA TERAPEUTAS ── */}
-        {tab==="agenda" && (
-          <div style={{ padding:"1.25rem" }}>
-            <div style={{ fontWeight:700,fontSize:"0.85rem",marginBottom:"0.35rem" }}>Agenda dos Terapeutas</div>
-            <div style={{ fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1.25rem",lineHeight:1.5 }}>
-              Consulte quais crianças cada terapeuta atende por dia e horário.
-            </div>
-            <div style={{ position:"relative",marginBottom:"1rem" }}>
-              <input value={therapistAgendaFilter} onChange={e=>setTherapistAgendaFilter(e.target.value)}
-                placeholder="🔍  Buscar terapeuta..."
-                style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"10px",
-                  padding:"0.65rem 0.9rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",
-                  fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box" }} />
-              {therapistAgendaFilter&&<button onClick={()=>setTherapistAgendaFilter("")} style={{position:"absolute",right:"0.75rem",top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#6b7a99",cursor:"pointer",fontSize:"1rem"}}>✕</button>}
-            </div>
-            <div style={{ display:"flex",gap:"0.4rem",marginBottom:"1.25rem",overflowX:"auto",paddingBottom:"0.25rem" }}>
-              {[["ALL","Todos"],...DAYS.map(d=>[d,DAY_LABELS[d]])].map(([key,label])=>(
-                <button key={key} onClick={()=>setTherapistAgendaDay(key)} style={{
-                  flexShrink:0,padding:"0.45rem 0.75rem",borderRadius:"8px",border:"none",cursor:"pointer",
-                  background:therapistAgendaDay===key?"#2563eb":"#141b26",
-                  color:therapistAgendaDay===key?"#fff":"#6b7a99",
-                  fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.75rem"
-                }}>{label}</button>
-              ))}
-            </div>
-            {(()=>{
-              const daysToShow = therapistAgendaDay==="ALL" ? DAYS : [therapistAgendaDay];
-              const allT = [...new Set(DAYS.flatMap(d=>(therapistSchedules[d]||[]).map(s=>s.therapist)))].sort();
-              const filtered = therapistAgendaFilter ? allT.filter(n=>n.toLowerCase().includes(therapistAgendaFilter.toLowerCase())) : allT;
-              if(!allT.length) return (
-                <div style={{textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"2rem 1rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548"}}>
-                  <div style={{fontSize:"1.5rem",marginBottom:"0.5rem"}}>📅</div>
-                  Nenhuma agenda importada ainda
-                  <div style={{fontSize:"0.72rem",marginTop:"0.4rem",color:"#4a5a70"}}>Importe as agendas na aba 📋</div>
-                </div>
-              );
-              if(!filtered.length) return (
-                <div style={{textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"1.5rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548"}}>
-                  Nenhum resultado para "{therapistAgendaFilter}"
-                </div>
-              );
-              return filtered.map(name=>{
-                const hasAny = daysToShow.some(d=>(therapistSchedules[d]||[]).some(s=>s.therapist===name));
-                if(!hasAny) return null;
-                return (
-                  <div key={name} style={{background:"#0d1420",border:"1px solid #1e2d45",borderLeft:"3px solid #2563eb",borderRadius:"10px",padding:"0.85rem 1rem",marginBottom:"0.75rem"}}>
-                    <div style={{fontWeight:700,fontSize:"0.9rem",color:"#60a5fa",marginBottom:"0.75rem"}}>{name}</div>
-                    {daysToShow.map(day=>{
-                      const slots=(therapistSchedules[day]||[]).filter(s=>s.therapist===name).sort((a,b)=>a.time.localeCompare(b.time));
-                      if(!slots.length) return null;
-                      return (
-                        <div key={day} style={{marginBottom:"0.6rem"}}>
-                          {therapistAgendaDay==="ALL"&&<div style={{fontSize:"0.7rem",fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"0.4rem"}}>{DAY_LABELS[day]}</div>}
-                          {slots.map((s,i)=>{
-                            const actEntry=(childActivities[day]||[]).find(a=>a.child===s.child&&a.therapist===name&&a.time===s.time);
-                            return (
-                              <div key={i} style={{display:"flex",alignItems:"center",gap:"0.5rem",marginBottom:"0.3rem",flexWrap:"wrap"}}>
-                                <span style={{fontFamily:"'DM Mono',monospace",fontSize:"0.78rem",color:"#3b82f6",background:"#1e2d45",borderRadius:"5px",padding:"0.12rem 0.45rem",minWidth:"52px",textAlign:"center",flexShrink:0}}>{s.time}</span>
-                                <span style={{fontSize:"0.82rem",color:"#e8f0fe",flexShrink:0}}>{s.child}</span>
-                                {actEntry?.activity&&<span style={{fontSize:"0.7rem",color:"#a78bfa",background:"#1a0a2e",borderRadius:"5px",padding:"0.1rem 0.4rem"}}>{actEntry.activity}</span>}
-                              </div>
-                            );
-                          })}
+                      {childSlots.map((s,i)=>(
+                        <div key={i} style={{ display:"flex",alignItems:"center",gap:"0.75rem" }}>
+                          <span style={{ fontFamily:"'DM Mono',monospace",fontSize:"0.8rem",color:"#3b82f6",
+                            background:"#1e2d45",borderRadius:"5px",padding:"0.15rem 0.5rem",
+                            minWidth:"52px",textAlign:"center",flexShrink:0 }}>{s.time}</span>
+                          <span style={{ fontSize:"0.85rem",color:"#cbd5e1" }}>{s.therapist}</span>
                         </div>
-                      );
-                    })}
-                  </div>
-                );
-              });
-            })()}
-          </div>
-        )}
-
-        {/* ── HABILIDADES ── */}
-        {tab==="skills" && (
-          <div style={{ padding:"1.25rem" }}>
-            <div style={{ fontWeight:700,fontSize:"0.85rem",marginBottom:"0.35rem" }}>Habilidades por Criança</div>
-            <div style={{ fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1.25rem",lineHeight:1.5 }}>
-              Atividades e habilidades de cada criança por dia e horário.
-            </div>
-            <div style={{ position:"relative",marginBottom:"1rem" }}>
-              <input value={skillsSearch} onChange={e=>setSkillsSearch(e.target.value)}
-                placeholder="🔍  Buscar criança..."
-                style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"10px",
-                  padding:"0.65rem 0.9rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",
-                  fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box" }} />
-              {skillsSearch&&<button onClick={()=>setSkillsSearch("")} style={{ position:"absolute",right:"0.75rem",top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#6b7a99",cursor:"pointer",fontSize:"1rem" }}>✕</button>}
-            </div>
-            <div style={{ display:"flex",gap:"0.4rem",marginBottom:"1.25rem",overflowX:"auto",paddingBottom:"0.25rem" }}>
-              {[["ALL","Todos"],...DAYS.map(d=>[d,DAY_LABELS[d]])].map(([key,label])=>(
-                <button key={key} onClick={()=>setSkillsDay(key)} style={{
-                  flexShrink:0,padding:"0.45rem 0.75rem",borderRadius:"8px",border:"none",cursor:"pointer",
-                  background:skillsDay===key?"#10b981":"#141b26",
-                  color:skillsDay===key?"#fff":"#6b7a99",
-                  fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.75rem"
-                }}>{label}</button>
-              ))}
-            </div>
-            {(()=>{
-              const daysToShow = skillsDay==="ALL" ? DAYS : [skillsDay];
-              const byChild = {};
-              daysToShow.forEach(day=>{
-                (childActivities[day]||[]).forEach(e=>{
-                  if(!byChild[e.child]) byChild[e.child]={};
-                  if(!byChild[e.child][day]) byChild[e.child][day]=[];
-                  byChild[e.child][day].push({time:e.time,activity:e.activity,therapist:e.therapist});
-                });
-              });
-              let children = Object.keys(byChild).sort();
-              if(skillsSearch.trim()) children=children.filter(c=>c.toLowerCase().includes(skillsSearch.toLowerCase()));
-              const actStyle = act => {
-                if(!act) return {bg:"#1e2d45",color:"#6b7a99"};
-                const a=act.toLowerCase();
-                if(a.includes("fono")) return {bg:"#1a0a2e",color:"#a78bfa"};
-                if(a.includes("psicomotric")) return {bg:"#0a2e1a",color:"#34d399"};
-                if(a.includes("motora")) return {bg:"#0a1a2e",color:"#60a5fa"};
-                if(a.includes("autocuidado")) return {bg:"#2e1a0a",color:"#fb923c"};
-                if(a.includes("social")) return {bg:"#2e0a1a",color:"#f472b6"};
-                if(a.includes("academ")) return {bg:"#1a2e0a",color:"#a3e635"};
-                if(a.includes("psicoterap")) return {bg:"#2e2a0a",color:"#fbbf24"};
-                return {bg:"#1e2d45",color:"#94a3b8"};
-              };
-              if(!Object.keys(byChild).length) return (
-                <div style={{textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"2rem 1rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548"}}>
-                  <div style={{fontSize:"1.5rem",marginBottom:"0.5rem"}}>📋</div>
-                  Nenhuma atividade importada ainda
-                  <div style={{fontSize:"0.72rem",marginTop:"0.4rem",color:"#4a5a70"}}>Importe as agendas das crianças na aba 📋</div>
-                </div>
-              );
-              if(!children.length) return (
-                <div style={{textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"1.5rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548"}}>
-                  Nenhum resultado para "{skillsSearch}"
-                </div>
-              );
-              return children.map(child=>(
-                <div key={child} style={{background:"#0d1420",border:"1px solid #1e2d45",borderLeft:"3px solid #10b981",borderRadius:"10px",padding:"0.85rem 1rem",marginBottom:"0.75rem"}}>
-                  <div style={{fontWeight:700,fontSize:"0.9rem",color:"#e8f0fe",marginBottom:"0.75rem"}}>{child}</div>
-                  {daysToShow.map(day=>{
-                    const slots=byChild[child]?.[day];
-                    if(!slots||!slots.length) return null;
-                    return (
-                      <div key={day} style={{marginBottom:"0.6rem"}}>
-                        {skillsDay==="ALL"&&<div style={{fontSize:"0.7rem",fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"0.4rem"}}>{DAY_LABELS[day]}</div>}
-                        {slots.sort((a,b)=>a.time.localeCompare(b.time)).map((s,i)=>{
-                          const c=actStyle(s.activity);
-                          return (
-                            <div key={i} style={{display:"flex",alignItems:"center",gap:"0.6rem",marginBottom:"0.35rem"}}>
-                              <span style={{fontFamily:"'DM Mono',monospace",fontSize:"0.78rem",color:"#3b82f6",background:"#1e2d45",borderRadius:"5px",padding:"0.12rem 0.45rem",minWidth:"52px",textAlign:"center",flexShrink:0}}>{s.time}</span>
-                              <span style={{fontSize:"0.78rem",background:c.bg,color:c.color,borderRadius:"6px",padding:"0.2rem 0.55rem",fontWeight:500,flexShrink:0}}>{s.activity||"—"}</span>
-                              {s.therapist&&<span style={{fontSize:"0.72rem",color:"#4a5a70"}}>{s.therapist}</span>}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })}
-                </div>
-              ));
-            })()}
-          </div>
-        )}
-
-        {/* ── GERENCIAR ── */}
-        {tab==="manage" && (
-          <div style={{ padding:"1.25rem" }}>
-            <div style={{ fontWeight:700,fontSize:"0.85rem",marginBottom:"0.35rem" }}>Gerenciar Cadastros</div>
-            <div style={{ fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1.25rem",lineHeight:1.5 }}>
-              Edite nomes de terapeutas ou remova desligados. Para <strong style={{color:"#94a3b8"}}>alterar agenda</strong>, reimporte na aba 📋.
-            </div>
-            <div style={{ display:"flex",gap:"0.4rem",marginBottom:"1.25rem" }}>
-              {[["therapists","🧑‍⚕️ Terapeutas"],["children","👶 Crianças"]].map(([key,label])=>(
-                <button key={key} onClick={()=>{setManageTab(key);setManageSearch("");}} style={{
-                  flex:1,padding:"0.5rem",borderRadius:"8px",border:"none",cursor:"pointer",
-                  background:manageTab===key?"#1e2d45":"#0d1420",
-                  color:manageTab===key?"#e8f0fe":"#6b7a99",
-                  fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.8rem",
-                  borderBottom:manageTab===key?"2px solid #64748b":"2px solid transparent"
-                }}>{label}</button>
-              ))}
-            </div>
-            <div style={{ position:"relative",marginBottom:"1rem" }}>
-              <input value={manageSearch} onChange={e=>setManageSearch(e.target.value)}
-                placeholder={`🔍  Buscar ${manageTab==="therapists"?"terapeuta":"criança"}...`}
-                style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"10px",
-                  padding:"0.65rem 0.9rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",
-                  fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box" }} />
-              {manageSearch&&<button onClick={()=>setManageSearch("")} style={{position:"absolute",right:"0.75rem",top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#6b7a99",cursor:"pointer",fontSize:"1rem"}}>✕</button>}
-            </div>
-            {manageTab==="therapists"&&(()=>{
-              const allT=[...new Set(DAYS.flatMap(d=>[...(freeSlots[d]||[]).map(s=>s.therapist),...(therapistSchedules[d]||[]).map(s=>s.therapist)]))].sort();
-              const filtered=manageSearch?allT.filter(n=>n.toLowerCase().includes(manageSearch.toLowerCase())):allT;
-              if(!allT.length) return <div style={{textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"2rem 1rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548"}}><div style={{fontSize:"1.5rem",marginBottom:"0.5rem"}}>📋</div>Nenhum terapeuta importado ainda</div>;
-              if(!filtered.length) return <div style={{textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"1.5rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548"}}>Nenhum resultado para "{manageSearch}"</div>;
-              return filtered.map(name=>{
-                const freeCount=DAYS.reduce((a,d)=>a+(freeSlots[d]||[]).filter(s=>s.therapist===name).length,0);
-                const schedCount=DAYS.reduce((a,d)=>a+(therapistSchedules[d]||[]).filter(s=>s.therapist===name).length,0);
-                return (
-                  <div key={name} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0.75rem 1rem",marginBottom:"0.4rem",borderRadius:"10px",background:"#0d1420",border:"1px solid #1e2d45"}}>
-                    <div>
-                      <div style={{fontWeight:600,fontSize:"0.875rem"}}>{name}</div>
-                      <div style={{fontSize:"0.72rem",color:"#6b7a99",marginTop:"0.15rem"}}>{freeCount} livre(s) · {schedCount} atendimento(s)/sem</div>
-                    </div>
-                    <div style={{display:"flex",gap:"0.35rem"}}>
-                      <Btn onClick={()=>setEditingTherapist({oldName:name,newName:name})} small color="#1e3a5f">✏️</Btn>
-                      <Btn onClick={()=>setConfirmRemove({type:"therapist",name})} small color="#3d1515">🗑</Btn>
+                      ))}
                     </div>
                   </div>
                 );
               });
             })()}
-            {manageTab==="children"&&(()=>{
-              const allC=[...new Set(DAYS.flatMap(d=>(therapistSchedules[d]||[]).map(s=>s.child)))].sort();
-              const filtered=manageSearch?allC.filter(n=>n.toLowerCase().includes(manageSearch.toLowerCase())):allC;
-              if(!allC.length) return <div style={{textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"2rem 1rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548"}}><div style={{fontSize:"1.5rem",marginBottom:"0.5rem"}}>📋</div>Nenhuma criança importada ainda</div>;
-              if(!filtered.length) return <div style={{textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"1.5rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548"}}>Nenhum resultado para "{manageSearch}"</div>;
-              return filtered.map(name=>{
-                const schedCount=DAYS.reduce((a,d)=>a+(therapistSchedules[d]||[]).filter(s=>s.child===name).length,0);
-                const pendCount=subs.filter(s=>s.patient.toLowerCase()===name.toLowerCase()&&s.status==="Pending").length;
-                const therapistList=[...new Set(DAYS.flatMap(d=>(therapistSchedules[d]||[]).filter(s=>s.child===name).map(s=>s.therapist)))];
-                return (
-                  <div key={name} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0.75rem 1rem",marginBottom:"0.4rem",borderRadius:"10px",background:"#0d1420",border:"1px solid #1e2d45"}}>
-                    <div style={{flex:1,minWidth:0,marginRight:"0.75rem"}}>
-                      <div style={{fontWeight:600,fontSize:"0.875rem"}}>{name}</div>
-                      <div style={{fontSize:"0.72rem",color:"#6b7a99",marginTop:"0.15rem"}}>
-                        {schedCount} horário(s) · {therapistList.length} terapeuta(s)
-                        {pendCount>0&&<span style={{color:"#f59e0b",marginLeft:"0.4rem"}}>· {pendCount} pendência(s)</span>}
-                      </div>
-                      <div style={{fontSize:"0.7rem",color:"#4a5a70",marginTop:"0.2rem",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{therapistList.join(", ")}</div>
-                    </div>
-                    <Btn onClick={()=>setConfirmRemove({type:"child",name})} small color="#3d1515">🗑</Btn>
-                  </div>
-                );
-              });
-            })()}
-            <div style={{marginTop:"1.5rem",background:"#0d1420",border:"1px solid #1e2d45",borderRadius:"10px",padding:"0.85rem 1rem"}}>
-              <div style={{fontSize:"0.72rem",fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"0.5rem"}}>💡 Alterar agenda</div>
-              <div style={{fontSize:"0.75rem",color:"#6b7a99",lineHeight:1.5}}>Reimporte na aba <strong style={{color:"#94a3b8"}}>📋 Importar</strong> — os dados do terapeuta são substituídos automaticamente.</div>
-            </div>
           </div>
         )}
 
@@ -1679,30 +1470,112 @@ Regras finais:
 
         {/* Designação Rápida */}
         {showBulkModal && (
-          <Modal title="⚡ Designação Rápida" onClose={()=>setShowBulkModal(false)}>
+          <Modal title="⚡ Designar Pendência" onClose={()=>setShowBulkModal(false)}>
             <div style={{ fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1rem",lineHeight:1.5 }}>
-              Converte todas as pendências do paciente no intervalo para <strong style={{color:"#3b82f6"}}>Designada</strong>, ou cria uma nova entrada se não houver pendência.
+              Selecione um paciente pendente e atribua um terapeuta para <strong style={{color:"#3b82f6"}}>Designada</strong>.
             </div>
-            <Field label="Paciente" value={bulkForm.patient} onChange={v=>setBulkForm(f=>({...f,patient:v}))} placeholder="Ex: Gael Tanan" />
-            <div style={{ display:"flex",gap:"0.75rem" }}>
-              <div style={{ flex:1 }}>
-                <label style={{ display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.4rem" }}>De</label>
-                <select value={bulkForm.timeFrom} onChange={e=>setBulkForm(f=>({...f,timeFrom:e.target.value}))}
-                  style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.6rem 0.8rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box",cursor:"pointer" }}>
-                  {TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
-              <div style={{ flex:1 }}>
-                <label style={{ display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.4rem" }}>Até</label>
-                <select value={bulkForm.timeTo} onChange={e=>setBulkForm(f=>({...f,timeTo:e.target.value}))}
-                  style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.6rem 0.8rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box",cursor:"pointer" }}>
-                  {TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
+
+            {/* Patient selector */}
+            <div style={{ marginBottom:"1rem" }}>
+              <label style={{ display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.4rem" }}>Paciente Pendente</label>
+              <select value={bulkForm.patient} onChange={e=>{
+                const name = e.target.value;
+                // Auto-fill timeFrom/timeTo from the patient's pending entries
+                const patPending = pending.filter(s=>s.patient===name);
+                let autoFrom = "08:00", autoTo = "08:00";
+                if (patPending.length > 0) {
+                  // Extract all time tokens from all pending entries of this patient
+                  const allTimes = patPending.flatMap(s => {
+                    const raw = s.time || "";
+                    // Handle "HH:MM às HH:MM" or "HH:MM" or "Hh" formats
+                    return raw.split(/às|a /).map(t => {
+                      const clean = t.trim().replace(/h$/i,"");
+                      // Normalize to HH:MM
+                      if (clean.includes(":")) return clean.padStart(5,"0");
+                      if (/^\d{1,2}$/.test(clean)) return clean.padStart(2,"0")+":00";
+                      return null;
+                    }).filter(Boolean);
+                  }).sort();
+                  if (allTimes.length > 0) {
+                    autoFrom = allTimes[0];
+                    autoTo = allTimes[allTimes.length-1];
+                  }
+                }
+                setBulkForm(f=>({...f, patient:name, timeFrom:autoFrom, timeTo:autoTo}));
+              }}
+                style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.6rem 0.8rem",color:bulkForm.patient?"#e8f0fe":"#3a4a60",fontSize:"0.875rem",outline:"none",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box",cursor:"pointer" }}>
+                <option value="">Selecionar paciente...</option>
+                {[...new Set(pending.map(s=>s.patient))].sort().map(name=>(
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
             </div>
-            <div style={{ marginTop:"1rem" }}>
-              <Field label="Feita por (terapeuta)" value={bulkForm.therapist} onChange={v=>setBulkForm(f=>({...f,therapist:v}))} placeholder="Ex: Jennifer Felicio" />
+
+            {/* Show the pending time info for selected patient */}
+            {bulkForm.patient && (() => {
+              const patPending = pending.filter(s=>s.patient===bulkForm.patient);
+              return (
+                <div style={{ background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.65rem 0.85rem",marginBottom:"1rem" }}>
+                  <div style={{ fontSize:"0.68rem",fontWeight:700,color:"#6b7a99",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"0.4rem" }}>Horários pendentes</div>
+                  {patPending.map((s,i)=>(
+                    <div key={i} style={{ display:"flex",alignItems:"center",gap:"0.6rem",marginBottom:"0.2rem" }}>
+                      <span style={{ fontFamily:"'DM Mono',monospace",fontSize:"0.82rem",color:"#f59e0b",background:"#2a2010",borderRadius:"5px",padding:"0.1rem 0.45rem" }}>{s.time}</span>
+                      {s.day && <span style={{ fontSize:"0.75rem",color:"#64748b" }}>{DAY_LABELS[s.day]||s.day}</span>}
+                      {s.absentTherapist && <span style={{ fontSize:"0.7rem",color:"#6b7a99" }}>· falta: {s.absentTherapist}</span>}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+
+            {/* Time range — only times extracted from this patient's pending entries */}
+            {bulkForm.patient && (() => {
+              const patPending = pending.filter(s=>s.patient===bulkForm.patient);
+              // Build unique sorted set of times from pending entries
+              const pendingTimes = [...new Set(patPending.flatMap(s => {
+                const raw = s.time || "";
+                return raw.split(/às|a /).map(t => {
+                  const clean = t.trim().replace(/h$/i,"");
+                  if (clean.includes(":")) return clean.padStart(5,"0");
+                  if (/^\d{1,2}$/.test(clean)) return clean.padStart(2,"0")+":00";
+                  return null;
+                }).filter(Boolean);
+              }))].sort();
+
+              if (pendingTimes.length === 0) return null;
+
+              return (
+                <div style={{ display:"flex",gap:"0.75rem",marginBottom:"1rem" }}>
+                  <div style={{ flex:1 }}>
+                    <label style={{ display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.4rem" }}>De</label>
+                    <select value={bulkForm.timeFrom} onChange={e=>setBulkForm(f=>({...f,timeFrom:e.target.value}))}
+                      style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.6rem 0.8rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box",cursor:"pointer" }}>
+                      {pendingTimes.map(t=><option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ flex:1 }}>
+                    <label style={{ display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.4rem" }}>Até</label>
+                    <select value={bulkForm.timeTo} onChange={e=>setBulkForm(f=>({...f,timeTo:e.target.value}))}
+                      style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.6rem 0.8rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box",cursor:"pointer" }}>
+                      {pendingTimes.filter(t=>t>=bulkForm.timeFrom).map(t=><option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Therapist selector */}
+            <div style={{ marginBottom:"1rem" }}>
+              <label style={{ display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.4rem" }}>Terapeuta Substituto</label>
+              <select value={bulkForm.therapist} onChange={e=>setBulkForm(f=>({...f,therapist:e.target.value}))}
+                style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.6rem 0.8rem",color:bulkForm.therapist?"#e8f0fe":"#3a4a60",fontSize:"0.875rem",outline:"none",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box",cursor:"pointer" }}>
+                <option value="">Selecionar terapeuta...</option>
+                {allTherapists.map(name=>(
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
             </div>
+
             <SaveCancel onCancel={()=>setShowBulkModal(false)} onSave={saveBulk} />
           </Modal>
         )}
@@ -1718,57 +1591,6 @@ Regras finais:
             <div style={{ display:"flex",gap:"0.5rem" }}>
               <button onClick={()=>setShowClearConfirm(null)} style={{ flex:1,padding:"0.65rem",background:"#1e2d45",border:"none",borderRadius:"8px",color:"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.875rem",cursor:"pointer" }}>Cancelar</button>
               <button onClick={()=>clearSubs(showClearConfirm)} style={{ flex:1,padding:"0.65rem",background:"#dc2626",border:"none",borderRadius:"8px",color:"#fff",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.875rem",cursor:"pointer" }}>Confirmar</button>
-            </div>
-          </Modal>
-        )}
-
-        {/* Multi-slot modal */}
-        {showMultiSlotModal && (
-          <Modal title="⚡ Adicionar Múltiplos Horários" onClose={()=>setShowMultiSlotModal(false)}>
-            <div style={{fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1rem"}}>
-              Selecione o terapeuta e marque os horários disponíveis em <strong style={{color:"#94a3b8"}}>{DAY_LABELS[activeDay]}</strong>.
-            </div>
-            <Field label="Terapeuta" value={multiSlotForm.therapist} onChange={v=>setMultiSlotForm(f=>({...f,therapist:v}))} placeholder="Nome do terapeuta..." />
-            <div style={{marginBottom:"1rem"}}>
-              <label style={{display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.6rem"}}>Horários ({multiSlotForm.times.length} selecionados)</label>
-              <div style={{display:"flex",flexWrap:"wrap",gap:"0.4rem"}}>
-                {TIME_OPTIONS.map(t=>{
-                  const sel=multiSlotForm.times.includes(t);
-                  return (
-                    <button key={t} onClick={()=>setMultiSlotForm(f=>({...f,times:sel?f.times.filter(x=>x!==t):[...f.times,t]}))}
-                      style={{padding:"0.35rem 0.65rem",borderRadius:"7px",border:`1px solid ${sel?"#3b82f6":"#2a3548"}`,
-                        background:sel?"#1e2d45":"#0d1420",color:sel?"#3b82f6":"#6b7a99",
-                        fontFamily:"'DM Mono',sans-serif",fontSize:"0.78rem",cursor:"pointer",fontWeight:sel?600:400}}>
-                      {t}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            <SaveCancel onCancel={()=>setShowMultiSlotModal(false)} onSave={saveMultiSlot} />
-          </Modal>
-        )}
-
-        {editingTherapist && (
-          <Modal title="✏️ Editar Nome do Terapeuta" onClose={()=>setEditingTherapist(null)}>
-            <div style={{fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1rem"}}>Nome atual: <strong style={{color:"#94a3b8"}}>{editingTherapist.oldName}</strong></div>
-            <Field label="Novo nome" value={editingTherapist.newName} onChange={v=>setEditingTherapist(p=>({...p,newName:v}))} placeholder="Digite o nome correto..." />
-            <div style={{fontSize:"0.72rem",color:"#6b7a99",marginBottom:"1rem"}}>Será atualizado em todos os registros: horários livres, agendas, faltas e substituições.</div>
-            <SaveCancel onCancel={()=>setEditingTherapist(null)} onSave={()=>renameTherapist(editingTherapist.oldName,editingTherapist.newName)} />
-          </Modal>
-        )}
-
-        {confirmRemove && (
-          <Modal title={`⚠️ Remover ${confirmRemove.type==="therapist"?"Terapeuta":"Criança"}`} onClose={()=>setConfirmRemove(null)}>
-            <div style={{fontSize:"0.875rem",color:"#94a3b8",marginBottom:"0.5rem",lineHeight:1.6}}>
-              Remover <strong style={{color:"#e8f0fe"}}>{confirmRemove.name}</strong> de todos os registros?
-            </div>
-            <div style={{fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1.25rem",lineHeight:1.5}}>
-              {confirmRemove.type==="therapist"?"Serão removidos: horários livres, agendas e faltas registradas.":"Serão removidos: agendas, pendências de substituição e faltas registradas."}
-            </div>
-            <div style={{display:"flex",gap:"0.5rem"}}>
-              <button onClick={()=>setConfirmRemove(null)} style={{flex:1,padding:"0.65rem",background:"#1e2d45",border:"none",borderRadius:"8px",color:"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.875rem",cursor:"pointer"}}>Cancelar</button>
-              <button onClick={()=>confirmRemove.type==="therapist"?removeTherapist(confirmRemove.name):removeChild(confirmRemove.name)} style={{flex:1,padding:"0.65rem",background:"#dc2626",border:"none",borderRadius:"8px",color:"#fff",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.875rem",cursor:"pointer"}}>Remover</button>
             </div>
           </Modal>
         )}
