@@ -295,8 +295,21 @@ export default function App() {
   const openEditSub = s => { setEditingSub(s.id); setSubForm({patient:s.patient,time:s.time,therapist:s.therapist,status:s.status}); setShowSubModal(true); };
   const saveSub = () => {
     if (!subForm.patient || !subForm.time) return;
-    if (editingSub) setSubs(p=>p.map(s=>s.id===editingSub?{...s,...subForm}:s));
-    else setSubs(p=>[...p,{id:Date.now(),...subForm}]);
+    const patLower = subForm.patient.toLowerCase().trim();
+
+    if (subForm.status === "Designated" && subForm.therapist.trim()) {
+      // Remove all Pending entries for this same patient, then save
+      setSubs(prev => {
+        const withoutPending = prev.filter(s =>
+          !(s.status === "Pending" && s.patient.toLowerCase().trim() === patLower && s.id !== editingSub)
+        );
+        if (editingSub) return withoutPending.map(s => s.id === editingSub ? { ...s, ...subForm } : s);
+        return [...withoutPending, { id: Date.now(), ...subForm }];
+      });
+    } else {
+      if (editingSub) setSubs(p => p.map(s => s.id === editingSub ? { ...s, ...subForm } : s));
+      else setSubs(p => [...p, { id: Date.now(), ...subForm }]);
+    }
     setShowSubModal(false);
   };
   const deleteSub = id => setSubs(p=>p.filter(s=>s.id!==id));
@@ -392,6 +405,33 @@ export default function App() {
     else if (type === "pending") setSubs(p => p.filter(s => s.status !== "Pending"));
     else setSubs([]);
     setShowClearConfirm(null);
+  };
+
+  const exportCSV = () => {
+    const now = new Date();
+    const dd = String(now.getDate()).padStart(2,"0");
+    const mm = String(now.getMonth()+1).padStart(2,"0");
+    const yyyy = now.getFullYear();
+    const filename = `substituicoes_${dd}-${mm}-${yyyy}.csv`;
+
+    const header = ["Paciente","Horário","Dia","Terapeuta","Status"];
+    const rows = subs.map(s => [
+      s.patient || "",
+      s.time || "",
+      DAY_LABELS[s.day] || s.day || "",
+      s.therapist || "",
+      s.status === "Designated" ? "Designada" : "Pendente"
+    ]);
+
+    const csvContent = [header, ...rows]
+      .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(";"))
+      .join("\r\n");
+
+    const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
   };
 
   // ── Free Slots CRUD ──
@@ -777,10 +817,11 @@ Regras finais:
                 <Btn onClick={openAddSub} small>+ Adicionar</Btn>
               </div>
             </div>
-            <div style={{ display:"flex",gap:"0.4rem",marginBottom:"1.25rem" }}>
-              <button onClick={()=>setShowClearConfirm("designated")} style={{ flex:1,padding:"0.35rem 0.5rem",background:"#1e2d45",border:"1px solid #2a3548",borderRadius:"7px",color:"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:500,fontSize:"0.7rem",cursor:"pointer" }}>🗑 Limpar Designadas</button>
-              <button onClick={()=>setShowClearConfirm("pending")} style={{ flex:1,padding:"0.35rem 0.5rem",background:"#1e2d45",border:"1px solid #2a3548",borderRadius:"7px",color:"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:500,fontSize:"0.7rem",cursor:"pointer" }}>🗑 Limpar Pendentes</button>
-              <button onClick={()=>setShowClearConfirm("all")} style={{ flex:1,padding:"0.35rem 0.5rem",background:"#3d1515",border:"1px solid #7f1d1d",borderRadius:"7px",color:"#f87171",fontFamily:"'DM Sans',sans-serif",fontWeight:500,fontSize:"0.7rem",cursor:"pointer" }}>🗑 Limpar Tudo</button>
+            <div style={{ display:"flex",gap:"0.4rem",marginBottom:"1.25rem",flexWrap:"wrap" }}>
+              <button onClick={()=>setShowClearConfirm("designated")} style={{ flex:1,minWidth:"80px",padding:"0.35rem 0.5rem",background:"#1e2d45",border:"1px solid #2a3548",borderRadius:"7px",color:"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:500,fontSize:"0.7rem",cursor:"pointer" }}>🗑 Designadas</button>
+              <button onClick={()=>setShowClearConfirm("pending")} style={{ flex:1,minWidth:"80px",padding:"0.35rem 0.5rem",background:"#1e2d45",border:"1px solid #2a3548",borderRadius:"7px",color:"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:500,fontSize:"0.7rem",cursor:"pointer" }}>🗑 Pendentes</button>
+              <button onClick={()=>setShowClearConfirm("all")} style={{ flex:1,minWidth:"60px",padding:"0.35rem 0.5rem",background:"#3d1515",border:"1px solid #7f1d1d",borderRadius:"7px",color:"#f87171",fontFamily:"'DM Sans',sans-serif",fontWeight:500,fontSize:"0.7rem",cursor:"pointer" }}>🗑 Tudo</button>
+              <button onClick={exportCSV} style={{ flex:1,minWidth:"70px",padding:"0.35rem 0.5rem",background:"#14532d",border:"1px solid #16a34a",borderRadius:"7px",color:"#4ade80",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.7rem",cursor:"pointer" }}>📥 Excel</button>
             </div>
 
             {/* Auto-pending notice */}
@@ -1599,7 +1640,9 @@ Regras finais:
           <Modal title={editingSub?"Editar Substituição":"Nova Substituição"} onClose={()=>setShowSubModal(false)}>
             <Field label="Paciente" value={subForm.patient} onChange={v=>setSubForm(f=>({...f,patient:v}))} placeholder="Ex: Gael Tanan" />
             <Field label="Horário" value={subForm.time} onChange={v=>setSubForm(f=>({...f,time:v}))} placeholder="Ex: 15h às 17h ou 16h" />
-            <Field label="Terapeuta (opcional)" value={subForm.therapist} onChange={v=>setSubForm(f=>({...f,therapist:v}))} placeholder="Ex: Jennifer Felicio" />
+            <Field label="Terapeuta (opcional)" value={subForm.therapist}
+              onChange={v=>setSubForm(f=>({...f, therapist:v, status: v.trim() ? "Designated" : "Pending" }))}
+              placeholder="Ex: Jennifer Felicio — preencher = Designada" />
             <Dropdown label="Status" value={subForm.status} onChange={v=>setSubForm(f=>({...f,status:v}))} options={[{value:"Pending",label:"🟡 Pendente"},{value:"Designated",label:"🔵 Designada"}]} />
             <SaveCancel onCancel={()=>setShowSubModal(false)} onSave={saveSub} />
           </Modal>
