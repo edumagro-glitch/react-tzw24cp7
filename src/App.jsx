@@ -181,7 +181,12 @@ export default function App() {
     return saved ? JSON.parse(saved) : [];
   });
   const [dischargeInput, setDischargeInput] = useState("");
-  const [showDischargeTab, setShowDischargeTab] = useState(false);
+
+  // Gerenciar Terapeutas
+  const [manageSearch, setManageSearch] = useState("");
+  const [editingTherapistName, setEditingTherapistName] = useState(null);
+  const [editingTherapistValue, setEditingTherapistValue] = useState("");
+  const [showRemoveConfirm, setShowRemoveConfirm] = useState(null);
 
   // Gravando no Local Save automaticamente toda vez que algo mudar
   useEffect(() => { localStorage.setItem("gestor_subs", JSON.stringify(subs)); }, [subs]);
@@ -191,10 +196,10 @@ export default function App() {
   useEffect(() => { localStorage.setItem("gestor_childAbsences", JSON.stringify(childAbsences)); }, [childAbsences]);
   useEffect(() => { localStorage.setItem("gestor_discharged", JSON.stringify(dischargedChildren)); }, [dischargedChildren]);
   
-  // All known therapist names from freeSlots
+  // All known therapist names from freeSlots (for dropdowns)
   const allTherapists = [...new Set(
-    DAYS.flatMap(d => freeSlots[d].map(s => s.therapist))
-  )].sort();
+    DAYS.flatMap(d => (freeSlots[d]||[]).map(s => s.therapist))
+  )].filter(Boolean).sort();
 
   // All known children from schedules
   const allChildren = [...new Set(
@@ -435,7 +440,56 @@ export default function App() {
   };
 
   // ── Free Slots CRUD ──
-  const openAddSlot = () => { setEditingSlot(null); setSlotForm({time:"13:00",therapist:""}); setShowSlotModal(true); };
+  // ── Gerenciar Terapeutas ──
+  const renameTherapist = (oldName, newName) => {
+    if (!newName.trim() || newName.trim() === oldName) return;
+    const n = newName.trim();
+    const replace = s => s === oldName ? n : s;
+    setFreeSlots(prev => {
+      const next = {};
+      DAYS.forEach(d => { next[d] = (prev[d]||[]).map(s => s.therapist === oldName ? {...s, therapist: n} : s); });
+      return next;
+    });
+    setTherapistSchedules(prev => {
+      const next = {};
+      DAYS.forEach(d => { next[d] = (prev[d]||[]).map(s => s.therapist === oldName ? {...s, therapist: n} : s); });
+      return next;
+    });
+    setSubs(prev => prev.map(s => s.therapist === oldName ? {...s, therapist: n} : s));
+    setAbsences(prev => {
+      const next = {};
+      DAYS.forEach(d => { next[d] = (prev[d]||[]).map(replace); });
+      return next;
+    });
+    setEditingTherapistName(null);
+    setEditingTherapistValue("");
+  };
+
+  const removeTherapist = (name) => {
+    setFreeSlots(prev => {
+      const next = {};
+      DAYS.forEach(d => { next[d] = (prev[d]||[]).filter(s => s.therapist !== name); });
+      return next;
+    });
+    setTherapistSchedules(prev => {
+      const next = {};
+      DAYS.forEach(d => { next[d] = (prev[d]||[]).filter(s => s.therapist !== name); });
+      return next;
+    });
+    setSubs(prev => prev.map(s => s.therapist === name ? {...s, therapist: "", status: "Pending"} : s));
+    setAbsences(prev => {
+      const next = {};
+      DAYS.forEach(d => { next[d] = (prev[d]||[]).filter(n => n !== name); });
+      return next;
+    });
+    setShowRemoveConfirm(null);
+  };
+
+  // All unique therapist names across all data sources
+  const allTherapistNames = [...new Set([
+    ...DAYS.flatMap(d => (freeSlots[d]||[]).map(s => s.therapist)),
+    ...DAYS.flatMap(d => (therapistSchedules[d]||[]).map(s => s.therapist)),
+  ])].filter(Boolean).sort();
   const openEditSlot = s => { setEditingSlot(s.id); setSlotForm({time:s.time,therapist:s.therapist}); setShowSlotModal(true); };
   const saveSlot = () => {
     if (!slotForm.therapist) return;
@@ -793,14 +847,15 @@ Regras finais:
                 ["absent", (absences[absenceDay]||[]).length>0 ? `📌 Faltas (${DAYS.reduce((a,d)=>a+(absences[d]||[]).length,0)})` : "📌 Faltas"],
                 ["discharged", dischargedChildren.length>0 ? `🚪 Desligadas (${dischargedChildren.length})` : "🚪 Desligadas"],
                 ["children","👶 Crianças"],
+                ["manage","⚙️ Gerenciar"],
                 ["upload","📋 Importar"]
               ].map(([key,label])=>(
                 <button key={key} onClick={()=>setTab(key)} style={{
                   flex:1,padding:"0.55rem 0.4rem",borderRadius:"10px",border:"none",cursor:"pointer",
                   background:tab===key?"#1e2d45":"transparent",
-                  color:tab===key?(key==="absent"?"#f87171":key==="discharged"?"#fb923c":key==="children"?"#a78bfa":"#3b82f6"):"#6b7a99",
-                  fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.65rem",
-                  borderBottom:tab===key?`2px solid ${key==="absent"?"#dc2626":key==="discharged"?"#f97316":key==="children"?"#7c3aed":"#3b82f6"}`:"2px solid transparent"
+                  color:tab===key?(key==="absent"?"#f87171":key==="discharged"?"#fb923c":key==="children"?"#a78bfa":key==="manage"?"#34d399":"#3b82f6"):"#6b7a99",
+                  fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.6rem",
+                  borderBottom:tab===key?`2px solid ${key==="absent"?"#dc2626":key==="discharged"?"#f97316":key==="children"?"#7c3aed":key==="manage"?"#10b981":"#3b82f6"}`:"2px solid transparent"
                 }}>{label}</button>
               ))}
             </div>
@@ -1409,6 +1464,135 @@ Regras finais:
 
 
         {/* ── CRIANÇAS ── */}
+        {/* ── GERENCIAR TERAPEUTAS ── */}
+        {tab==="manage" && (
+          <div style={{ padding:"1.25rem" }}>
+            <div style={{ fontWeight:700,fontSize:"0.85rem",marginBottom:"0.25rem" }}>Gerenciar Terapeutas</div>
+            <div style={{ fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1.25rem",lineHeight:1.5 }}>
+              Renomeie ou remova terapeutas. As alterações se aplicam em <strong style={{color:"#94a3b8"}}>todos os lugares</strong>: horários livres, agendas, substituições e faltas.
+            </div>
+
+            {/* Stats */}
+            <div style={{ display:"flex",gap:"0.5rem",marginBottom:"1.25rem" }}>
+              {[
+                { label:"Terapeutas", value: allTherapistNames.length, color:"#3b82f6", bg:"#1e2d45" },
+                { label:"Com horário livre", value: allTherapists.length, color:"#34d399", bg:"#064e3b22" },
+                { label:"Na agenda", value: [...new Set(DAYS.flatMap(d=>(therapistSchedules[d]||[]).map(s=>s.therapist)))].filter(Boolean).length, color:"#a78bfa", bg:"#2e106522" },
+              ].map(({label,value,color,bg})=>(
+                <div key={label} style={{ flex:1,background:bg,border:`1px solid ${color}33`,borderRadius:"10px",padding:"0.6rem 0.75rem",textAlign:"center" }}>
+                  <div style={{ fontSize:"1.2rem",fontWeight:700,color }}>{value}</div>
+                  <div style={{ fontSize:"0.65rem",color:"#6b7a99",marginTop:"0.1rem" }}>{label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Search */}
+            <div style={{ position:"relative",marginBottom:"0.75rem" }}>
+              <input value={manageSearch} onChange={e=>setManageSearch(e.target.value)}
+                placeholder="🔍  Buscar terapeuta..."
+                style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"10px",
+                  padding:"0.55rem 2rem 0.55rem 0.9rem",color:"#e8f0fe",fontSize:"0.82rem",outline:"none",
+                  fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box" }} />
+              {manageSearch && (
+                <button onClick={()=>setManageSearch("")}
+                  style={{ position:"absolute",right:"0.75rem",top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#6b7a99",cursor:"pointer",fontSize:"1rem",lineHeight:1 }}>✕</button>
+              )}
+            </div>
+
+            {allTherapistNames.length === 0 ? (
+              <div style={{ textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"2rem 1rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548" }}>
+                <div style={{ fontSize:"1.5rem",marginBottom:"0.5rem" }}>⚙️</div>
+                Nenhum terapeuta importado ainda
+                <div style={{ fontSize:"0.72rem",marginTop:"0.4rem",color:"#4a5a70" }}>Importe as agendas na aba 📋</div>
+              </div>
+            ) : (
+              <div>
+                {allTherapistNames
+                  .filter(name => !manageSearch.trim() || name.toLowerCase().includes(manageSearch.toLowerCase()))
+                  .map(name => {
+                    const isEditing = editingTherapistName === name;
+                    const freeDays = DAYS.filter(d => (freeSlots[d]||[]).some(s=>s.therapist===name));
+                    const scheduleDays = DAYS.filter(d => (therapistSchedules[d]||[]).some(s=>s.therapist===name));
+                    const subCount = subs.filter(s=>s.therapist===name).length;
+                    const hasAbsence = DAYS.some(d=>(absences[d]||[]).includes(name));
+
+                    return (
+                      <div key={name} style={{ background:"#0d1420",border:`1px solid ${isEditing?"#3b82f6":"#1e2d45"}`,borderRadius:"12px",padding:"0.9rem 1rem",marginBottom:"0.5rem",transition:"border-color 0.15s" }}>
+                        {isEditing ? (
+                          /* ── Edit mode ── */
+                          <div>
+                            <div style={{ fontSize:"0.68rem",fontWeight:700,color:"#6b7a99",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"0.5rem" }}>Novo nome</div>
+                            <div style={{ display:"flex",gap:"0.5rem" }}>
+                              <input
+                                value={editingTherapistValue}
+                                onChange={e=>setEditingTherapistValue(e.target.value)}
+                                onKeyDown={e=>{ if(e.key==="Enter") renameTherapist(name,editingTherapistValue); if(e.key==="Escape"){setEditingTherapistName(null);setEditingTherapistValue("");} }}
+                                autoFocus
+                                style={{ flex:1,background:"#141b26",border:"1px solid #3b82f6",borderRadius:"8px",padding:"0.55rem 0.75rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",fontFamily:"'DM Sans',sans-serif" }}
+                              />
+                              <button onClick={()=>renameTherapist(name,editingTherapistValue)}
+                                style={{ padding:"0.55rem 0.85rem",background:"#3b82f6",border:"none",borderRadius:"8px",color:"#fff",fontFamily:"'DM Sans',sans-serif",fontWeight:700,fontSize:"0.8rem",cursor:"pointer" }}>
+                                ✓ Salvar
+                              </button>
+                              <button onClick={()=>{setEditingTherapistName(null);setEditingTherapistValue("");}}
+                                style={{ padding:"0.55rem 0.75rem",background:"#1e2d45",border:"none",borderRadius:"8px",color:"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.8rem",cursor:"pointer" }}>
+                                ✕
+                              </button>
+                            </div>
+                            <div style={{ fontSize:"0.7rem",color:"#4a5a70",marginTop:"0.4rem" }}>Enter para salvar · Esc para cancelar</div>
+                          </div>
+                        ) : (
+                          /* ── View mode ── */
+                          <div>
+                            <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start" }}>
+                              <div style={{ flex:1,minWidth:0 }}>
+                                <div style={{ fontWeight:600,fontSize:"0.9rem",marginBottom:"0.35rem",color:"#e8f0fe" }}>{name}</div>
+                                <div style={{ display:"flex",flexWrap:"wrap",gap:"0.3rem" }}>
+                                  {freeDays.length>0 && (
+                                    <span style={{ fontSize:"0.65rem",background:"#064e3b33",color:"#34d399",borderRadius:"5px",padding:"0.1rem 0.45rem",fontWeight:600 }}>
+                                      🟢 Livre: {freeDays.map(d=>DAY_LABELS[d]).join(", ")}
+                                    </span>
+                                  )}
+                                  {scheduleDays.length>0 && (
+                                    <span style={{ fontSize:"0.65rem",background:"#2e106533",color:"#a78bfa",borderRadius:"5px",padding:"0.1rem 0.45rem",fontWeight:600 }}>
+                                      📅 Agenda: {scheduleDays.map(d=>DAY_LABELS[d]).join(", ")}
+                                    </span>
+                                  )}
+                                  {subCount>0 && (
+                                    <span style={{ fontSize:"0.65rem",background:"#1e2d45",color:"#60a5fa",borderRadius:"5px",padding:"0.1rem 0.45rem",fontWeight:600 }}>
+                                      🔁 {subCount} subst.
+                                    </span>
+                                  )}
+                                  {hasAbsence && (
+                                    <span style={{ fontSize:"0.65rem",background:"#3d151533",color:"#f87171",borderRadius:"5px",padding:"0.1rem 0.45rem",fontWeight:600 }}>
+                                      ⛔ Falta registrada
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div style={{ display:"flex",gap:"0.4rem",flexShrink:0,marginLeft:"0.75rem" }}>
+                                <button
+                                  onClick={()=>{ setEditingTherapistName(name); setEditingTherapistValue(name); }}
+                                  style={{ padding:"0.4rem 0.7rem",background:"#1e3a5f",border:"1px solid #2563eb",borderRadius:"7px",color:"#60a5fa",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.72rem",cursor:"pointer" }}>
+                                  ✏️ Renomear
+                                </button>
+                                <button
+                                  onClick={()=>setShowRemoveConfirm(name)}
+                                  style={{ padding:"0.4rem 0.7rem",background:"#3d1515",border:"1px solid #7f1d1d",borderRadius:"7px",color:"#f87171",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.72rem",cursor:"pointer" }}>
+                                  🗑
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+        )}
+
         {tab==="children" && (
           <div style={{ padding:"1.25rem" }}>
             <div style={{ fontWeight:700,fontSize:"0.85rem",marginBottom:"0.35rem" }}>Agenda por Criança</div>
@@ -1600,62 +1784,4 @@ Regras finais:
                       style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.6rem 0.8rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box",cursor:"pointer" }}>
                       {pendingTimes.filter(t=>t>=bulkForm.timeFrom).map(t=><option key={t} value={t}>{t}</option>)}
                     </select>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Therapist selector */}
-            <div style={{ marginBottom:"1rem" }}>
-              <label style={{ display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.4rem" }}>Terapeuta Substituto</label>
-              <select value={bulkForm.therapist} onChange={e=>setBulkForm(f=>({...f,therapist:e.target.value}))}
-                style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.6rem 0.8rem",color:bulkForm.therapist?"#e8f0fe":"#3a4a60",fontSize:"0.875rem",outline:"none",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box",cursor:"pointer" }}>
-                <option value="">Selecionar terapeuta...</option>
-                {allTherapists.map(name=>(
-                  <option key={name} value={name}>{name}</option>
-                ))}
-              </select>
-            </div>
-
-            <SaveCancel onCancel={()=>setShowBulkModal(false)} onSave={saveBulk} />
-          </Modal>
-        )}
-
-        {/* Confirmação de limpeza */}
-        {showClearConfirm && (
-          <Modal title="⚠️ Confirmar limpeza" onClose={()=>setShowClearConfirm(null)}>
-            <div style={{ fontSize:"0.875rem",color:"#94a3b8",marginBottom:"1.25rem",lineHeight:1.6 }}>
-              {showClearConfirm==="designated" && "Remover todas as substituições designadas?"}
-              {showClearConfirm==="pending" && "Remover todas as substituições pendentes?"}
-              {showClearConfirm==="all" && <span style={{color:"#f87171"}}>Remover <strong>todas</strong> as substituições (designadas + pendentes)?</span>}
-            </div>
-            <div style={{ display:"flex",gap:"0.5rem" }}>
-              <button onClick={()=>setShowClearConfirm(null)} style={{ flex:1,padding:"0.65rem",background:"#1e2d45",border:"none",borderRadius:"8px",color:"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.875rem",cursor:"pointer" }}>Cancelar</button>
-              <button onClick={()=>clearSubs(showClearConfirm)} style={{ flex:1,padding:"0.65rem",background:"#dc2626",border:"none",borderRadius:"8px",color:"#fff",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.875rem",cursor:"pointer" }}>Confirmar</button>
-            </div>
-          </Modal>
-        )}
-
-        {showSubModal && (
-          <Modal title={editingSub?"Editar Substituição":"Nova Substituição"} onClose={()=>setShowSubModal(false)}>
-            <Field label="Paciente" value={subForm.patient} onChange={v=>setSubForm(f=>({...f,patient:v}))} placeholder="Ex: Gael Tanan" />
-            <Field label="Horário" value={subForm.time} onChange={v=>setSubForm(f=>({...f,time:v}))} placeholder="Ex: 15h às 17h ou 16h" />
-            <Field label="Terapeuta (opcional)" value={subForm.therapist}
-              onChange={v=>setSubForm(f=>({...f, therapist:v, status: v.trim() ? "Designated" : "Pending" }))}
-              placeholder="Ex: Jennifer Felicio — preencher = Designada" />
-            <Dropdown label="Status" value={subForm.status} onChange={v=>setSubForm(f=>({...f,status:v}))} options={[{value:"Pending",label:"🟡 Pendente"},{value:"Designated",label:"🔵 Designada"}]} />
-            <SaveCancel onCancel={()=>setShowSubModal(false)} onSave={saveSub} />
-          </Modal>
-        )}
-
-        {showSlotModal && (
-          <Modal title={editingSlot?"Editar Horário":"Novo Terapeuta Livre"} onClose={()=>setShowSlotModal(false)}>
-            <Dropdown label="Horário" value={slotForm.time} onChange={v=>setSlotForm(f=>({...f,time:v}))} options={TIME_OPTIONS.map(t=>({value:t,label:t}))} />
-            <Field label="Terapeuta" value={slotForm.therapist} onChange={v=>setSlotForm(f=>({...f,therapist:v}))} placeholder="Ex: Isabella" />
-            <SaveCancel onCancel={()=>setShowSlotModal(false)} onSave={saveSlot} />
-          </Modal>
-        )}
-      </div>
-    </>
-  );
-}
+                  </
