@@ -1784,4 +1784,84 @@ Regras finais:
                       style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.6rem 0.8rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box",cursor:"pointer" }}>
                       {pendingTimes.filter(t=>t>=bulkForm.timeFrom).map(t=><option key={t} value={t}>{t}</option>)}
                     </select>
-                  </
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Therapist selector */}
+            <div style={{ marginBottom:"1rem" }}>
+              <label style={{ display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.4rem" }}>Terapeuta Substituto</label>
+              <select value={bulkForm.therapist} onChange={e=>setBulkForm(f=>({...f,therapist:e.target.value}))}
+                style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.6rem 0.8rem",color:bulkForm.therapist?"#e8f0fe":"#3a4a60",fontSize:"0.875rem",outline:"none",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box",cursor:"pointer" }}>
+                <option value="">Selecionar terapeuta...</option>
+                {allTherapists.map(name=>(
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+            </div>
+
+            <SaveCancel onCancel={()=>setShowBulkModal(false)} onSave={saveBulk} />
+          </Modal>
+        )}
+
+        {/* Confirmação de limpeza */}
+        {/* ── Remove Therapist Confirm ── */}
+        {showRemoveConfirm && (
+          <Modal title="🗑 Remover Terapeuta" onClose={()=>setShowRemoveConfirm(null)}>
+            <div style={{ fontSize:"0.875rem",color:"#94a3b8",marginBottom:"0.75rem",lineHeight:1.6 }}>
+              Remover <strong style={{color:"#f87171"}}>{showRemoveConfirm}</strong> do sistema?
+            </div>
+            <div style={{ background:"#1a0808",border:"1px solid #7f1d1d",borderRadius:"8px",padding:"0.75rem 1rem",marginBottom:"1.25rem",fontSize:"0.78rem",color:"#fca5a5",lineHeight:1.6 }}>
+              ⚠️ Isso vai:
+              <ul style={{ marginTop:"0.35rem",paddingLeft:"1.1rem" }}>
+                <li>Remover todos os horários livres deste terapeuta</li>
+                <li>Remover da agenda de todas as crianças</li>
+                <li>Deixar as substituições dele sem terapeuta (Pendente)</li>
+                <li>Remover das faltas registradas</li>
+              </ul>
+            </div>
+            <div style={{ display:"flex",gap:"0.5rem" }}>
+              <button onClick={()=>setShowRemoveConfirm(null)} style={{ flex:1,padding:"0.65rem",background:"#1e2d45",border:"none",borderRadius:"8px",color:"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.875rem",cursor:"pointer" }}>Cancelar</button>
+              <button onClick={()=>removeTherapist(showRemoveConfirm)} style={{ flex:1,padding:"0.65rem",background:"#dc2626",border:"none",borderRadius:"8px",color:"#fff",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.875rem",cursor:"pointer" }}>Remover</button>
+            </div>
+          </Modal>
+        )}
+
+        {showClearConfirm && (
+          <Modal title="⚠️ Confirmar limpeza" onClose={()=>setShowClearConfirm(null)}>
+            <div style={{ fontSize:"0.875rem",color:"#94a3b8",marginBottom:"1.25rem",lineHeight:1.6 }}>
+              {showClearConfirm==="designated" && "Remover todas as substituições designadas?"}
+              {showClearConfirm==="pending" && "Remover todas as substituições pendentes?"}
+              {showClearConfirm==="all" && <span style={{color:"#f87171"}}>Remover <strong>todas</strong> as substituições (designadas + pendentes)?</span>}
+            </div>
+            <div style={{ display:"flex",gap:"0.5rem" }}>
+              <button onClick={()=>setShowClearConfirm(null)} style={{ flex:1,padding:"0.65rem",background:"#1e2d45",border:"none",borderRadius:"8px",color:"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.875rem",cursor:"pointer" }}>Cancelar</button>
+              <button onClick={()=>clearSubs(showClearConfirm)} style={{ flex:1,padding:"0.65rem",background:"#dc2626",border:"none",borderRadius:"8px",color:"#fff",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.875rem",cursor:"pointer" }}>Confirmar</button>
+            </div>
+          </Modal>
+        )}
+
+        {showSubModal && (
+          <Modal title={editingSub?"Editar Substituição":"Nova Substituição"} onClose={()=>setShowSubModal(false)}>
+            <Field label="Paciente" value={subForm.patient} onChange={v=>setSubForm(f=>({...f,patient:v}))} placeholder="Ex: Gael Tanan" />
+            <Field label="Horário" value={subForm.time} onChange={v=>setSubForm(f=>({...f,time:v}))} placeholder="Ex: 15h às 17h ou 16h" />
+            <Field label="Terapeuta (opcional)" value={subForm.therapist}
+              onChange={v=>setSubForm(f=>({...f, therapist:v, status: v.trim() ? "Designated" : "Pending" }))}
+              placeholder="Ex: Jennifer Felicio — preencher = Designada" />
+            <Dropdown label="Status" value={subForm.status} onChange={v=>setSubForm(f=>({...f,status:v}))} options={[{value:"Pending",label:"🟡 Pendente"},{value:"Designated",label:"🔵 Designada"}]} />
+            <SaveCancel onCancel={()=>setShowSubModal(false)} onSave={saveSub} />
+          </Modal>
+        )}
+
+        {showSlotModal && (
+          <Modal title={editingSlot?"Editar Horário":"Novo Terapeuta Livre"} onClose={()=>setShowSlotModal(false)}>
+            <Dropdown label="Horário" value={slotForm.time} onChange={v=>setSlotForm(f=>({...f,time:v}))} options={TIME_OPTIONS.map(t=>({value:t,label:t}))} />
+            <Field label="Terapeuta" value={slotForm.therapist} onChange={v=>setSlotForm(f=>({...f,therapist:v}))} placeholder="Ex: Isabella" />
+            <SaveCancel onCancel={()=>setShowSlotModal(false)} onSave={saveSlot} />
+          </Modal>
+        )}
+      </div>
+    </>
+  );
+}
