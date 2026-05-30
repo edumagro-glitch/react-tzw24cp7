@@ -493,11 +493,11 @@ export default function App() {
   const openEditSlot = s => { setEditingSlot(s.id); setSlotForm({time:s.time,therapist:s.therapist}); setShowSlotModal(true); };
   const saveSlot = () => {
     if (!slotForm.therapist) return;
-    if (editingSlot) setFreeSlots(p=>({...p,[activeDay]:p[activeDay].map(s=>s.id===editingSlot?{...s,...slotForm}:s)}));
-    else setFreeSlots(p=>({...p,[activeDay]:[...p[activeDay],{id:Date.now(),...slotForm}]}));
+    if (editingSlot) setFreeSlots(p=>({...p,[activeDay]:(p[activeDay]||[]).map(s=>s.id===editingSlot?{...s,...slotForm}:s)}));
+    else setFreeSlots(p=>({...p,[activeDay]:[...(p[activeDay]||[]),{id:Date.now(),...slotForm}]}));
     setShowSlotModal(false);
   };
-  const deleteSlot = id => setFreeSlots(p=>({...p,[activeDay]:p[activeDay].filter(s=>s.id!==id)}));
+  const deleteSlot = id => setFreeSlots(p=>({...p,[activeDay]:(p[activeDay]||[]).filter(s=>s.id!==id)}));
 
   const slotsByTime = TIME_OPTIONS.reduce((acc,t)=>{
     const found=(freeSlots[activeDay]||[]).filter(s=>s.time===t);
@@ -923,7 +923,7 @@ Regras finais:
                   fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.78rem"
                 }}>
                   {DAY_LABELS[d]}
-                  {freeSlots[d].length>0&&<span style={{ marginLeft:"0.3rem",background:activeDay===d?"rgba(255,255,255,0.25)":"#1e2d45",borderRadius:"10px",padding:"0.05rem 0.35rem",fontSize:"0.65rem" }}>{freeSlots[d].length}</span>}
+                  {(freeSlots[d]||[]).length>0&&<span style={{ marginLeft:"0.3rem",background:activeDay===d?"rgba(255,255,255,0.25)":"#1e2d45",borderRadius:"10px",padding:"0.05rem 0.35rem",fontSize:"0.65rem" }}>{(freeSlots[d]||[]).length}</span>}
                 </button>
               ))}
             </div>
