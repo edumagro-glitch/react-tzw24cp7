@@ -1697,4 +1697,216 @@ Regras finais:
           </div>
         )}
 
-        {/*
+        {/* ── GERENCIAR ── */}
+        {tab==="manage" && (
+          <div style={{ padding:"1.25rem" }}>
+            <div style={{ fontWeight:700,fontSize:"0.85rem",marginBottom:"0.35rem" }}>Gerenciar Cadastros</div>
+            <div style={{ fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1.25rem",lineHeight:1.5 }}>
+              Edite nomes de terapeutas ou remova desligados. Para <strong style={{color:"#94a3b8"}}>alterar agenda</strong>, reimporte na aba 📋.
+            </div>
+            <div style={{ display:"flex",gap:"0.4rem",marginBottom:"1.25rem" }}>
+              {[["therapists","🧑‍⚕️ Terapeutas"],["children","👶 Crianças"]].map(([key,label])=>(
+                <button key={key} onClick={()=>{setManageTab(key);setManageSearch("");}} style={{
+                  flex:1,padding:"0.5rem",borderRadius:"8px",border:"none",cursor:"pointer",
+                  background:manageTab===key?"#1e2d45":"#0d1420",
+                  color:manageTab===key?"#e8f0fe":"#6b7a99",
+                  fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.8rem",
+                  borderBottom:manageTab===key?"2px solid #64748b":"2px solid transparent"
+                }}>{label}</button>
+              ))}
+            </div>
+            <div style={{ position:"relative",marginBottom:"1rem" }}>
+              <input value={manageSearch} onChange={e=>setManageSearch(e.target.value)}
+                placeholder={`🔍  Buscar ${manageTab==="therapists"?"terapeuta":"criança"}...`}
+                style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"10px",
+                  padding:"0.65rem 0.9rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",
+                  fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box" }} />
+              {manageSearch&&<button onClick={()=>setManageSearch("")} style={{position:"absolute",right:"0.75rem",top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#6b7a99",cursor:"pointer",fontSize:"1rem"}}>✕</button>}
+            </div>
+            {manageTab==="therapists"&&(()=>{
+              const allT=[...new Set(DAYS.flatMap(d=>[...(freeSlots[d]||[]).map(s=>s.therapist),...(therapistSchedules[d]||[]).map(s=>s.therapist)]))].sort();
+              const filtered=manageSearch?allT.filter(n=>n.toLowerCase().includes(manageSearch.toLowerCase())):allT;
+              if(!allT.length) return <div style={{textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"2rem 1rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548"}}><div style={{fontSize:"1.5rem",marginBottom:"0.5rem"}}>📋</div>Nenhum terapeuta importado ainda</div>;
+              if(!filtered.length) return <div style={{textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"1.5rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548"}}>Nenhum resultado para "{manageSearch}"</div>;
+              return filtered.map(name=>{
+                const freeCount=DAYS.reduce((a,d)=>a+(freeSlots[d]||[]).filter(s=>s.therapist===name).length,0);
+                const schedCount=DAYS.reduce((a,d)=>a+(therapistSchedules[d]||[]).filter(s=>s.therapist===name).length,0);
+                return (
+                  <div key={name} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0.75rem 1rem",marginBottom:"0.4rem",borderRadius:"10px",background:"#0d1420",border:"1px solid #1e2d45"}}>
+                    <div>
+                      <div style={{fontWeight:600,fontSize:"0.875rem"}}>{name}</div>
+                      <div style={{fontSize:"0.72rem",color:"#6b7a99",marginTop:"0.15rem"}}>{freeCount} livre(s) · {schedCount} atendimento(s)/sem</div>
+                    </div>
+                    <div style={{display:"flex",gap:"0.35rem"}}>
+                      <Btn onClick={()=>setEditingTherapist({oldName:name,newName:name})} small color="#1e3a5f">✏️</Btn>
+                      <Btn onClick={()=>setConfirmRemove({type:"therapist",name})} small color="#3d1515">🗑</Btn>
+                    </div>
+                  </div>
+                );
+              });
+            })()}
+            {manageTab==="children"&&(()=>{
+              const allC=[...new Set(DAYS.flatMap(d=>(therapistSchedules[d]||[]).map(s=>s.child)))].sort();
+              const filtered=manageSearch?allC.filter(n=>n.toLowerCase().includes(manageSearch.toLowerCase())):allC;
+              if(!allC.length) return <div style={{textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"2rem 1rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548"}}><div style={{fontSize:"1.5rem",marginBottom:"0.5rem"}}>📋</div>Nenhuma criança importada ainda</div>;
+              if(!filtered.length) return <div style={{textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"1.5rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548"}}>Nenhum resultado para "{manageSearch}"</div>;
+              return filtered.map(name=>{
+                const schedCount=DAYS.reduce((a,d)=>a+(therapistSchedules[d]||[]).filter(s=>s.child===name).length,0);
+                const pendCount=subs.filter(s=>s.patient.toLowerCase()===name.toLowerCase()&&s.status==="Pending").length;
+                const therapistList=[...new Set(DAYS.flatMap(d=>(therapistSchedules[d]||[]).filter(s=>s.child===name).map(s=>s.therapist)))];
+                return (
+                  <div key={name} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0.75rem 1rem",marginBottom:"0.4rem",borderRadius:"10px",background:"#0d1420",border:"1px solid #1e2d45"}}>
+                    <div style={{flex:1,minWidth:0,marginRight:"0.75rem"}}>
+                      <div style={{fontWeight:600,fontSize:"0.875rem"}}>{name}</div>
+                      <div style={{fontSize:"0.72rem",color:"#6b7a99",marginTop:"0.15rem"}}>
+                        {schedCount} horário(s) · {therapistList.length} terapeuta(s)
+                        {pendCount>0&&<span style={{color:"#f59e0b",marginLeft:"0.4rem"}}>· {pendCount} pendência(s)</span>}
+                      </div>
+                      <div style={{fontSize:"0.7rem",color:"#4a5a70",marginTop:"0.2rem",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{therapistList.join(", ")}</div>
+                    </div>
+                    <Btn onClick={()=>setConfirmRemove({type:"child",name})} small color="#3d1515">🗑</Btn>
+                  </div>
+                );
+              });
+            })()}
+            <div style={{marginTop:"1.5rem",background:"#0d1420",border:"1px solid #1e2d45",borderRadius:"10px",padding:"0.85rem 1rem"}}>
+              <div style={{fontSize:"0.72rem",fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"0.5rem"}}>💡 Alterar agenda</div>
+              <div style={{fontSize:"0.75rem",color:"#6b7a99",lineHeight:1.5}}>Reimporte na aba <strong style={{color:"#94a3b8"}}>📋 Importar</strong> — os dados do terapeuta são substituídos automaticamente.</div>
+            </div>
+          </div>
+        )}
+
+        {/* ── MODALS ── */}
+
+        {/* Designação Rápida */}
+        {showBulkModal && (
+          <Modal title="⚡ Designação Rápida" onClose={()=>setShowBulkModal(false)}>
+            <div style={{ fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1rem",lineHeight:1.5 }}>
+              Converte todas as pendências do paciente no intervalo para <strong style={{color:"#3b82f6"}}>Designada</strong>, ou cria uma nova entrada se não houver pendência.
+            </div>
+            <Field label="Paciente" value={bulkForm.patient} onChange={v=>setBulkForm(f=>({...f,patient:v}))} placeholder="Ex: Gael Tanan" />
+            <div style={{ display:"flex",gap:"0.75rem" }}>
+              <div style={{ flex:1 }}>
+                <label style={{ display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.4rem" }}>De</label>
+                <select value={bulkForm.timeFrom} onChange={e=>setBulkForm(f=>({...f,timeFrom:e.target.value}))}
+                  style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.6rem 0.8rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box",cursor:"pointer" }}>
+                  {TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div style={{ flex:1 }}>
+                <label style={{ display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.4rem" }}>Até</label>
+                <select value={bulkForm.timeTo} onChange={e=>setBulkForm(f=>({...f,timeTo:e.target.value}))}
+                  style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.6rem 0.8rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box",cursor:"pointer" }}>
+                  {TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+            </div>
+            <div style={{ marginTop:"1rem" }}>
+              <label style={{ display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.4rem" }}>Feita por (terapeuta)</label>
+              <div style={{ position:"relative",marginBottom:"0.5rem" }}>
+                <input value={bulkTherapistSearch} onChange={e=>setBulkTherapistSearch(e.target.value)} placeholder="🔍  Filtrar terapeuta..."
+                  style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.55rem 2rem 0.55rem 0.8rem",color:"#e8f0fe",fontSize:"0.82rem",outline:"none",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box" }}/>
+                {bulkTherapistSearch&&<button onClick={()=>setBulkTherapistSearch("")} style={{position:"absolute",right:"0.6rem",top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#6b7a99",cursor:"pointer",fontSize:"0.9rem"}}>✕</button>}
+              </div>
+              <div style={{ maxHeight:"130px",overflowY:"auto",border:"1px solid #2a3548",borderRadius:"8px",background:"#0d1420",marginBottom:"0.35rem" }}>
+                {allTherapists.filter(n=>!bulkTherapistSearch||n.toLowerCase().includes(bulkTherapistSearch.toLowerCase())).map(name=>(
+                  <div key={name} onClick={()=>{ setBulkForm(f=>({...f,therapist:name})); setBulkTherapistSearch(""); }}
+                    style={{ padding:"0.5rem 0.85rem",cursor:"pointer",fontSize:"0.875rem",background:bulkForm.therapist===name?"#1e2d45":"transparent",color:bulkForm.therapist===name?"#3b82f6":"#cbd5e1",borderBottom:"1px solid #1a2335" }}>
+                    {name}
+                  </div>
+                ))}
+                {allTherapists.length===0&&<div style={{padding:"0.5rem 0.85rem",fontSize:"0.8rem",color:"#6b7a99"}}>Nenhum terapeuta importado</div>}
+              </div>
+              {bulkForm.therapist&&<div style={{ fontSize:"0.72rem",color:"#34d399" }}>✓ {bulkForm.therapist}</div>}
+            </div>
+            <SaveCancel onCancel={()=>setShowBulkModal(false)} onSave={saveBulk} />
+          </Modal>
+        )}
+
+        {/* Confirmação de limpeza */}
+        {showClearConfirm && (
+          <Modal title="⚠️ Confirmar limpeza" onClose={()=>setShowClearConfirm(null)}>
+            <div style={{ fontSize:"0.875rem",color:"#94a3b8",marginBottom:"1.25rem",lineHeight:1.6 }}>
+              {showClearConfirm==="designated" && "Remover todas as substituições designadas?"}
+              {showClearConfirm==="pending" && "Remover todas as substituições pendentes?"}
+              {showClearConfirm==="all" && <span style={{color:"#f87171"}}>Remover <strong>todas</strong> as substituições (designadas + pendentes)?</span>}
+            </div>
+            <div style={{ display:"flex",gap:"0.5rem" }}>
+              <button onClick={()=>setShowClearConfirm(null)} style={{ flex:1,padding:"0.65rem",background:"#1e2d45",border:"none",borderRadius:"8px",color:"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.875rem",cursor:"pointer" }}>Cancelar</button>
+              <button onClick={()=>clearSubs(showClearConfirm)} style={{ flex:1,padding:"0.65rem",background:"#dc2626",border:"none",borderRadius:"8px",color:"#fff",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.875rem",cursor:"pointer" }}>Confirmar</button>
+            </div>
+          </Modal>
+        )}
+
+        {/* Multi-slot modal */}
+        {showMultiSlotModal && (
+          <Modal title="⚡ Adicionar Múltiplos Horários" onClose={()=>setShowMultiSlotModal(false)}>
+            <div style={{fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1rem"}}>
+              Selecione o terapeuta e marque os horários disponíveis em <strong style={{color:"#94a3b8"}}>{DAY_LABELS[activeDay]}</strong>.
+            </div>
+            <Field label="Terapeuta" value={multiSlotForm.therapist} onChange={v=>setMultiSlotForm(f=>({...f,therapist:v}))} placeholder="Nome do terapeuta..." />
+            <div style={{marginBottom:"1rem"}}>
+              <label style={{display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.6rem"}}>Horários ({multiSlotForm.times.length} selecionados)</label>
+              <div style={{display:"flex",flexWrap:"wrap",gap:"0.4rem"}}>
+                {TIME_OPTIONS.map(t=>{
+                  const sel=multiSlotForm.times.includes(t);
+                  return (
+                    <button key={t} onClick={()=>setMultiSlotForm(f=>({...f,times:sel?f.times.filter(x=>x!==t):[...f.times,t]}))}
+                      style={{padding:"0.35rem 0.65rem",borderRadius:"7px",border:`1px solid ${sel?"#3b82f6":"#2a3548"}`,
+                        background:sel?"#1e2d45":"#0d1420",color:sel?"#3b82f6":"#6b7a99",
+                        fontFamily:"'DM Mono',sans-serif",fontSize:"0.78rem",cursor:"pointer",fontWeight:sel?600:400}}>
+                      {t}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <SaveCancel onCancel={()=>setShowMultiSlotModal(false)} onSave={saveMultiSlot} />
+          </Modal>
+        )}
+
+        {editingTherapist && (
+          <Modal title="✏️ Editar Nome do Terapeuta" onClose={()=>setEditingTherapist(null)}>
+            <div style={{fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1rem"}}>Nome atual: <strong style={{color:"#94a3b8"}}>{editingTherapist.oldName}</strong></div>
+            <Field label="Novo nome" value={editingTherapist.newName} onChange={v=>setEditingTherapist(p=>({...p,newName:v}))} placeholder="Digite o nome correto..." />
+            <div style={{fontSize:"0.72rem",color:"#6b7a99",marginBottom:"1rem"}}>Será atualizado em todos os registros: horários livres, agendas, faltas e substituições.</div>
+            <SaveCancel onCancel={()=>setEditingTherapist(null)} onSave={()=>renameTherapist(editingTherapist.oldName,editingTherapist.newName)} />
+          </Modal>
+        )}
+
+        {confirmRemove && (
+          <Modal title={`⚠️ Remover ${confirmRemove.type==="therapist"?"Terapeuta":"Criança"}`} onClose={()=>setConfirmRemove(null)}>
+            <div style={{fontSize:"0.875rem",color:"#94a3b8",marginBottom:"0.5rem",lineHeight:1.6}}>
+              Remover <strong style={{color:"#e8f0fe"}}>{confirmRemove.name}</strong> de todos os registros?
+            </div>
+            <div style={{fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1.25rem",lineHeight:1.5}}>
+              {confirmRemove.type==="therapist"?"Serão removidos: horários livres, agendas e faltas registradas.":"Serão removidos: agendas, pendências de substituição e faltas registradas."}
+            </div>
+            <div style={{display:"flex",gap:"0.5rem"}}>
+              <button onClick={()=>setConfirmRemove(null)} style={{flex:1,padding:"0.65rem",background:"#1e2d45",border:"none",borderRadius:"8px",color:"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.875rem",cursor:"pointer"}}>Cancelar</button>
+              <button onClick={()=>confirmRemove.type==="therapist"?removeTherapist(confirmRemove.name):removeChild(confirmRemove.name)} style={{flex:1,padding:"0.65rem",background:"#dc2626",border:"none",borderRadius:"8px",color:"#fff",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.875rem",cursor:"pointer"}}>Remover</button>
+            </div>
+          </Modal>
+        )}
+
+        {showSubModal && (
+          <Modal title={editingSub?"Editar Substituição":"Nova Substituição"} onClose={()=>setShowSubModal(false)}>
+            <Field label="Paciente" value={subForm.patient} onChange={v=>setSubForm(f=>({...f,patient:v}))} placeholder="Ex: Gael Tanan" />
+            <Field label="Horário" value={subForm.time} onChange={v=>setSubForm(f=>({...f,time:v}))} placeholder="Ex: 15h às 17h ou 16h" />
+            <Field label="Terapeuta (opcional)" value={subForm.therapist} onChange={v=>setSubForm(f=>({...f,therapist:v}))} placeholder="Ex: Jennifer Felicio" />
+            <Dropdown label="Status" value={subForm.status} onChange={v=>setSubForm(f=>({...f,status:v}))} options={[{value:"Pending",label:"🟡 Pendente"},{value:"Designated",label:"🔵 Designada"}]} />
+            <SaveCancel onCancel={()=>setShowSubModal(false)} onSave={saveSub} />
+          </Modal>
+        )}
+
+        {showSlotModal && (
+          <Modal title={editingSlot?"Editar Horário":"Novo Terapeuta Livre"} onClose={()=>setShowSlotModal(false)}>
+            <Dropdown label="Horário" value={slotForm.time} onChange={v=>setSlotForm(f=>({...f,time:v}))} options={TIME_OPTIONS.map(t=>({value:t,label:t}))} />
+            <Field label="Terapeuta" value={slotForm.therapist} onChange={v=>setSlotForm(f=>({...f,therapist:v}))} placeholder="Ex: Isabella" />
+            <SaveCancel onCancel={()=>setShowSlotModal(false)} onSave={saveSlot} />
+          </Modal>
+        )}
+      </div>
+    </>
+  );
+}
