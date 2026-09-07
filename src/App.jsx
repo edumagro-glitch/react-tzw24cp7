@@ -205,6 +205,10 @@ export default function App() {
   useEffect(() => { localStorage.setItem("gestor_childAbsences", JSON.stringify(childAbsences)); }, [childAbsences]);
 
   // All known therapist names from freeSlots
+const allTherapists = [...new Set(
+  DAYS.flatMap(d => freeSlots[d].map(s => s.therapist))
+)].sort();
+
 const allChildren = [...new Set(
   DAYS.flatMap(d => (therapistSchedules[d]||[]).map(s => s.child))
 )].sort();
