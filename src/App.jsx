@@ -186,12 +186,12 @@ export default function App() {
   });
 
   // Gravando no Local Save automaticamente toda vez que algo mudar
-  const [dischargedChildren, setDischargedChildren] = useState(() => {
-    const saved = localStorage.getItem("gestor_discharged");
+const [dischargedTherapists, setDischargedTherapists] = useState(() => {
+    const saved = localStorage.getItem("gestor_dischargedTherapists");
     return saved ? JSON.parse(saved) : [];
-  });
-  const [dischargeInput, setDischargeInput] = useState("");
-  const [childActivities, setChildActivities] = useState(() => {
+});
+const [dischargeTherapistInput, setDischargeTherapistInput] = useState("");
+const [dischargeTab, setDischargeTab] = useState("children"); // "children" | "therapists"
     const saved = localStorage.getItem("gestor_childActivities");
     return saved ? JSON.parse(saved) : { SEG:[], TER:[], QUA:[], QUI:[], SEX:[] };
   });
@@ -201,6 +201,7 @@ export default function App() {
   useEffect(() => { localStorage.setItem("gestor_schedules", JSON.stringify(therapistSchedules)); }, [therapistSchedules]);
   useEffect(() => { localStorage.setItem("gestor_absences", JSON.stringify(absences)); }, [absences]);
   useEffect(() => { localStorage.setItem("gestor_discharged", JSON.stringify(dischargedChildren)); }, [dischargedChildren]);
+  useEffect(() => { localStorage.setItem("gestor_dischargedTherapists", JSON.stringify(dischargedTherapists)); }, [dischargedTherapists]);
   useEffect(() => { localStorage.setItem("gestor_childActivities", JSON.stringify(childActivities)); }, [childActivities]);
   useEffect(() => { localStorage.setItem("gestor_childAbsences", JSON.stringify(childAbsences)); }, [childAbsences]);
 
@@ -238,6 +239,50 @@ const allChildren = [...new Set(
       const ns={...prevSlots};
       DAYS.forEach(day=>{ ns[day]=(ns[day]||[]).filter(s=>s.dischargedChild!==childName); });
       return ns;
+      const dischargeTherapist = (therapistName) => {
+    if(!therapistName.trim()) return;
+    const name = therapistName.trim();
+    if(dischargedTherapists.includes(name)) return;
+    const lo = name.toLowerCase();
+
+    setDischargedTherapists(prev=>[...prev, name]);
+
+    // Tira dos horários livres — ele não trabalha mais aqui
+    setFreeSlots(prevSlots=>{
+      const ns={...prevSlots};
+      DAYS.forEach(day=>{ ns[day]=(ns[day]||[]).filter(s=>s.therapist.toLowerCase()!==lo); });
+      return ns;
+    });
+
+    // Cria pendência pra cada criança que ele atendia, em TODOS os dias
+    const newPending = [];
+    DAYS.forEach(day=>{
+      (therapistSchedules[day]||[]).filter(s=>s.therapist.toLowerCase()===lo).forEach(({ child, time })=>{
+        const alreadyExists = subs.some(s=>
+          s.patient.toLowerCase()===child.toLowerCase() &&
+          s.day===day && s.status==="Pending"
+        );
+        if(!alreadyExists){
+          newPending.push({
+            id: Date.now()+Math.random(),
+            patient: child,
+            time, day,
+            therapist:"",
+            status:"Pending",
+            autoCreated:true,
+            dischargedTherapist:name,
+            activities:[]
+          });
+        }
+      });
+    });
+    if(newPending.length>0) setSubs(prev=>[...prev,...newPending]);
+};
+
+const reactivateTherapist = (name) => {
+    setDischargedTherapists(prev=>prev.filter(n=>n!==name));
+    setSubs(prev=>prev.filter(s=>!(s.dischargedTherapist===name && s.status==="Pending")));
+};
     });
   };
   const toggleAbsence = (day, name) => {
@@ -1424,58 +1469,129 @@ Regras finais:
 
 
         {/* DESLIGADAS */}
-        {tab==="discharged" && (
-          <div style={{ padding:"1.25rem" }}>
-            <div style={{ fontWeight:700,fontSize:"0.85rem",marginBottom:"0.35rem" }}>Crianças Desligadas</div>
-            <div style={{ fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1.25rem",lineHeight:1.5 }}>
-              Informe o nome da criança desligada. Ela sai da agenda e os terapeutas ficam com horário livre.
-            </div>
-            <div style={{ display:"flex",gap:"0.5rem",marginBottom:"1.25rem" }}>
-              <div style={{ flex:1 }}>
-                <select value={dischargeInput} onChange={e=>setDischargeInput(e.target.value)}
-                  style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"10px",padding:"0.65rem 0.9rem",color:dischargeInput?"#e8f0fe":"#3a4a60",fontSize:"0.875rem",outline:"none",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box",cursor:"pointer" }}>
-                  <option value="">Selecionar criança...</option>
-                  {allChildren.filter(c=>!dischargedChildren.includes(c)).map(c=>(<option key={c} value={c}>{c}</option>))}
-                </select>
-              </div>
-              <button onClick={()=>{ if(dischargeInput){ dischargeChild(dischargeInput); setDischargeInput(""); } }} disabled={!dischargeInput}
-                style={{ padding:"0.65rem 1rem",background:dischargeInput?"#f97316":"#1e2d45",border:"none",borderRadius:"10px",color:dischargeInput?"#fff":"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:700,fontSize:"0.82rem",cursor:dischargeInput?"pointer":"not-allowed",flexShrink:0 }}>
-                Desligar
-              </button>
-            </div>
-            {dischargedChildren.length===0 ? (
-              <div style={{ textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"2rem 1rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548" }}>
-                <div style={{ fontSize:"1.5rem",marginBottom:"0.5rem" }}>🚪</div>
-                Nenhuma criança desligada registrada
-              </div>
-            ) : (
-              <div>
-                <div style={{ fontSize:"0.72rem",fontWeight:700,color:"#6b7a99",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"0.75rem" }}>{dischargedChildren.length} criança(s) desligada(s)</div>
-                {dischargedChildren.map(child=>{
-                  const freedSlots=DAYS.flatMap(d=>(therapistSchedules[d]||[]).filter(s=>s.child===child).map(s=>({...s,day:d})));
-                  return (
-                    <div key={child} style={{ background:"#0d1420",border:"1px solid #7c2d12",borderLeft:"3px solid #f97316",borderRadius:"10px",padding:"0.85rem 1rem",marginBottom:"0.5rem",display:"flex",justifyContent:"space-between",alignItems:"flex-start" }}>
-                      <div>
-                        <div style={{ fontWeight:600,fontSize:"0.875rem",color:"#fed7aa",marginBottom:"0.2rem" }}>{child}</div>
-                        {freedSlots.length>0?(
-                          <div style={{ fontSize:"0.72rem",color:"#6b7a99" }}>
-                            {freedSlots.slice(0,3).map((s,i)=>(<span key={i} style={{marginRight:"0.5rem"}}>{DAY_LABELS[s.day]} {s.time} · {s.therapist}</span>))}
-                            {freedSlots.length>3&&<span style={{color:"#4a5a70"}}>+{freedSlots.length-3} mais</span>}
-                          </div>
-                        ):(
-                          <div style={{ fontSize:"0.72rem",color:"#4a5a70" }}>Terapeutas agora livres nos horários dessa criança</div>
-                        )}
+       {tab==="discharged" && (
+  <div style={{ padding:"1.25rem" }}>
+    <div style={{ display:"flex",gap:"0.4rem",marginBottom:"1.25rem" }}>
+      {[["children","👶 Crianças"],["therapists","🧑‍⚕️ Terapeutas"]].map(([key,label])=>(
+        <button key={key} onClick={()=>setDischargeTab(key)} style={{
+          flex:1,padding:"0.5rem",borderRadius:"8px",border:"none",cursor:"pointer",
+          background:dischargeTab===key?"#3d2410":"#0d1420",
+          color:dischargeTab===key?"#fb923c":"#6b7a99",
+          fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.8rem",
+          borderBottom:dischargeTab===key?"2px solid #f97316":"2px solid transparent"
+        }}>{label}</button>
+      ))}
+    </div>
+
+    {dischargeTab==="children" && (
+      <>
+        <div style={{ fontWeight:700,fontSize:"0.85rem",marginBottom:"0.35rem" }}>Crianças Desligadas</div>
+        <div style={{ fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1.25rem",lineHeight:1.5 }}>
+          Informe o nome da criança desligada. Ela sai da agenda e os terapeutas ficam com horário livre.
+        </div>
+        <div style={{ display:"flex",gap:"0.5rem",marginBottom:"1.25rem" }}>
+          <div style={{ flex:1 }}>
+            <select value={dischargeInput} onChange={e=>setDischargeInput(e.target.value)}
+              style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"10px",padding:"0.65rem 0.9rem",color:dischargeInput?"#e8f0fe":"#3a4a60",fontSize:"0.875rem",outline:"none",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box",cursor:"pointer" }}>
+              <option value="">Selecionar criança...</option>
+              {allChildren.filter(c=>!dischargedChildren.includes(c)).map(c=>(<option key={c} value={c}>{c}</option>))}
+            </select>
+          </div>
+          <button onClick={()=>{ if(dischargeInput){ dischargeChild(dischargeInput); setDischargeInput(""); } }} disabled={!dischargeInput}
+            style={{ padding:"0.65rem 1rem",background:dischargeInput?"#f97316":"#1e2d45",border:"none",borderRadius:"10px",color:dischargeInput?"#fff":"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:700,fontSize:"0.82rem",cursor:dischargeInput?"pointer":"not-allowed",flexShrink:0 }}>
+            Desligar
+          </button>
+        </div>
+        {dischargedChildren.length===0 ? (
+          <div style={{ textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"2rem 1rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548" }}>
+            <div style={{ fontSize:"1.5rem",marginBottom:"0.5rem" }}>🚪</div>
+            Nenhuma criança desligada registrada
+          </div>
+        ) : (
+          <div>
+            <div style={{ fontSize:"0.72rem",fontWeight:700,color:"#6b7a99",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"0.75rem" }}>{dischargedChildren.length} criança(s) desligada(s)</div>
+            {dischargedChildren.map(child=>{
+              const freedSlots=DAYS.flatMap(d=>(therapistSchedules[d]||[]).filter(s=>s.child===child).map(s=>({...s,day:d})));
+              return (
+                <div key={child} style={{ background:"#0d1420",border:"1px solid #7c2d12",borderLeft:"3px solid #f97316",borderRadius:"10px",padding:"0.85rem 1rem",marginBottom:"0.5rem",display:"flex",justifyContent:"space-between",alignItems:"flex-start" }}>
+                  <div>
+                    <div style={{ fontWeight:600,fontSize:"0.875rem",color:"#fed7aa",marginBottom:"0.2rem" }}>{child}</div>
+                    {freedSlots.length>0?(
+                      <div style={{ fontSize:"0.72rem",color:"#6b7a99" }}>
+                        {freedSlots.slice(0,3).map((s,i)=>(<span key={i} style={{marginRight:"0.5rem"}}>{DAY_LABELS[s.day]} {s.time} · {s.therapist}</span>))}
+                        {freedSlots.length>3&&<span style={{color:"#4a5a70"}}>+{freedSlots.length-3} mais</span>}
                       </div>
-                      <button onClick={()=>reactivateChild(child)} style={{ background:"#1e2d45",border:"none",borderRadius:"6px",color:"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.7rem",cursor:"pointer",padding:"0.3rem 0.6rem",flexShrink:0,marginLeft:"0.5rem" }}>
-                        ↩ Reativar
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+                    ):(
+                      <div style={{ fontSize:"0.72rem",color:"#4a5a70" }}>Terapeutas agora livres nos horários dessa criança</div>
+                    )}
+                  </div>
+                  <button onClick={()=>reactivateChild(child)} style={{ background:"#1e2d45",border:"none",borderRadius:"6px",color:"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.7rem",cursor:"pointer",padding:"0.3rem 0.6rem",flexShrink:0,marginLeft:"0.5rem" }}>
+                    ↩ Reativar
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
+      </>
+    )}
+
+    {dischargeTab==="therapists" && (
+      <>
+        <div style={{ fontWeight:700,fontSize:"0.85rem",marginBottom:"0.35rem" }}>Terapeutas Desligados</div>
+        <div style={{ fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1.25rem",lineHeight:1.5 }}>
+          Informe o terapeuta desligado. Os horários livres dele somem e as crianças que ele atendia viram pendência de substituição em todos os dias.
+        </div>
+        <div style={{ display:"flex",gap:"0.5rem",marginBottom:"1.25rem" }}>
+          <div style={{ flex:1 }}>
+            <select value={dischargeTherapistInput} onChange={e=>setDischargeTherapistInput(e.target.value)}
+              style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"10px",padding:"0.65rem 0.9rem",color:dischargeTherapistInput?"#e8f0fe":"#3a4a60",fontSize:"0.875rem",outline:"none",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box",cursor:"pointer" }}>
+              <option value="">Selecionar terapeuta...</option>
+              {allTherapists.filter(t=>!dischargedTherapists.includes(t)).map(t=>(<option key={t} value={t}>{t}</option>))}
+            </select>
+          </div>
+          <button onClick={()=>{ if(dischargeTherapistInput){ dischargeTherapist(dischargeTherapistInput); setDischargeTherapistInput(""); } }} disabled={!dischargeTherapistInput}
+            style={{ padding:"0.65rem 1rem",background:dischargeTherapistInput?"#f97316":"#1e2d45",border:"none",borderRadius:"10px",color:dischargeTherapistInput?"#fff":"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:700,fontSize:"0.82rem",cursor:dischargeTherapistInput?"pointer":"not-allowed",flexShrink:0 }}>
+            Desligar
+          </button>
+        </div>
+        {dischargedTherapists.length===0 ? (
+          <div style={{ textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"2rem 1rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548" }}>
+            <div style={{ fontSize:"1.5rem",marginBottom:"0.5rem" }}>🚪</div>
+            Nenhum terapeuta desligado registrado
+          </div>
+        ) : (
+          <div>
+            <div style={{ fontSize:"0.72rem",fontWeight:700,color:"#6b7a99",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"0.75rem" }}>{dischargedTherapists.length} terapeuta(s) desligado(s)</div>
+            {dischargedTherapists.map(name=>{
+              const affectedChildren=[...new Set(DAYS.flatMap(d=>(therapistSchedules[d]||[]).filter(s=>s.therapist.toLowerCase()===name.toLowerCase()).map(s=>s.child)))];
+              const pendCount = subs.filter(s=>s.dischargedTherapist===name && s.status==="Pending").length;
+              return (
+                <div key={name} style={{ background:"#0d1420",border:"1px solid #7c2d12",borderLeft:"3px solid #f97316",borderRadius:"10px",padding:"0.85rem 1rem",marginBottom:"0.5rem",display:"flex",justifyContent:"space-between",alignItems:"flex-start" }}>
+                  <div>
+                    <div style={{ fontWeight:600,fontSize:"0.875rem",color:"#fed7aa",marginBottom:"0.2rem" }}>{name}</div>
+                    {affectedChildren.length>0?(
+                      <div style={{ fontSize:"0.72rem",color:"#6b7a99" }}>
+                        {affectedChildren.slice(0,3).join(", ")}
+                        {affectedChildren.length>3&&<span style={{color:"#4a5a70"}}> +{affectedChildren.length-3} mais</span>}
+                        {pendCount>0&&<span style={{color:"#f59e0b",marginLeft:"0.4rem"}}>· {pendCount} pendência(s) criadas</span>}
+                      </div>
+                    ):(
+                      <div style={{ fontSize:"0.72rem",color:"#4a5a70" }}>Sem agenda registrada</div>
+                    )}
+                  </div>
+                  <button onClick={()=>reactivateTherapist(name)} style={{ background:"#1e2d45",border:"none",borderRadius:"6px",color:"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.7rem",cursor:"pointer",padding:"0.3rem 0.6rem",flexShrink:0,marginLeft:"0.5rem" }}>
+                    ↩ Reativar
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </>
+    )}
+  </div>
+)}
 
         {/* ── ENTRADAS ── */}
         {tab==="entries" && (
