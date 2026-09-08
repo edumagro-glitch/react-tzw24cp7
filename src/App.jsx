@@ -1,27 +1,25 @@
-import React, { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 
 const DAYS = ["SEG", "TER", "QUA", "QUI", "SEX"];
 const DAY_LABELS = { SEG: "Segunda", TER: "Terça", QUA: "Quarta", QUI: "Quinta", SEX: "Sexta" };
 const TIME_OPTIONS = ["08:00","08:30","09:00","09:30","10:00","10:30","11:00","11:30","12:00","12:30",
   "13:00","13:30","14:00","14:30","15:00","15:30","16:00","16:30","17:00","17:30","18:00"];
 
-const initialSubstitutions = [
-  { id: 1, patient: "Gael Tanan", time: "15h às 17h", therapist: "Jennifer Felicio", status: "Designated" },
-  { id: 2, patient: "Arthur Tartari", time: "16h", therapist: "", status: "Pending" },
-];
-const initialFreeSlots = { SEG:[], TER:[], QUA:[], QUI:[], SEX:[] };
-// therapistSchedules: { SEG: [{therapist, child, time}], ... } — built from import
-// stores who each therapist was attending per day/time so absence detection works
+const initialSubs = [];
+const emptyDays = { SEG:[], TER:[], QUA:[], QUI:[], SEX:[] };
 
-// ─── UI Components ────────────────────────────────────────────────────────────
+function load(key, def) {
+  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : def; } catch { return def; }
+}
 
+// ── UI helpers ────────────────────────────────────────────────────────────────
 function Modal({ title, onClose, children }) {
   return (
-    <div style={{ position:"fixed",inset:0,background:"rgba(10,14,20,0.88)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:"1rem",backdropFilter:"blur(4px)" }}>
-      <div style={{ background:"#141b26",border:"1px solid #2a3548",borderRadius:"16px",padding:"1.5rem",width:"100%",maxWidth:"440px",boxShadow:"0 24px 64px rgba(0,0,0,0.6)",maxHeight:"90vh",overflowY:"auto" }}>
+    <div style={{ position:"fixed",inset:0,background:"rgba(10,14,20,0.9)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:"1rem",backdropFilter:"blur(4px)" }}>
+      <div style={{ background:"#141b26",border:"1px solid #2a3548",borderRadius:"16px",padding:"1.5rem",width:"100%",maxWidth:"440px",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 24px 64px rgba(0,0,0,0.6)" }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1.25rem" }}>
-          <span style={{ fontFamily:"'DM Sans',sans-serif",fontWeight:700,fontSize:"1rem",color:"#e8f0fe" }}>{title}</span>
-          <button onClick={onClose} style={{ background:"none",border:"none",color:"#6b7a99",cursor:"pointer",fontSize:"1.4rem",lineHeight:1 }}>✕</button>
+          <span style={{ fontWeight:700,fontSize:"1rem",color:"#e8f0fe" }}>{title}</span>
+          <button onClick={onClose} style={{ background:"none",border:"none",color:"#6b7a99",cursor:"pointer",fontSize:"1.4rem" }}>✕</button>
         </div>
         {children}
       </div>
@@ -33,19 +31,19 @@ function Field({ label, value, onChange, placeholder }) {
   return (
     <div style={{ marginBottom:"1rem" }}>
       <label style={{ display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.4rem" }}>{label}</label>
-      <input value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder}
-        style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.6rem 0.8rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box" }} />
+      <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+        style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.6rem 0.8rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",fontFamily:"inherit",boxSizing:"border-box" }} />
     </div>
   );
 }
 
-function Dropdown({ label, value, onChange, options }) {
+function DDrop({ label, value, onChange, options }) {
   return (
     <div style={{ marginBottom:"1rem" }}>
       <label style={{ display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.4rem" }}>{label}</label>
-      <select value={value} onChange={e=>onChange(e.target.value)}
-        style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.6rem 0.8rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box",cursor:"pointer" }}>
-        {options.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
+      <select value={value} onChange={e => onChange(e.target.value)}
+        style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.6rem 0.8rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",fontFamily:"inherit",boxSizing:"border-box",cursor:"pointer" }}>
+        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
     </div>
   );
@@ -55,18 +53,18 @@ function Btn({ children, onClick, color="#3b82f6", small, disabled }) {
   return (
     <button onClick={onClick} disabled={disabled} style={{
       background:disabled?"#1e2d45":color, border:"none", borderRadius:small?"6px":"8px",
-      color:disabled?"#6b7a99":"#fff", fontFamily:"'DM Sans',sans-serif", fontWeight:600,
+      color:disabled?"#6b7a99":"#fff", fontFamily:"inherit", fontWeight:600,
       fontSize:small?"0.75rem":"0.875rem", padding:small?"0.3rem 0.65rem":"0.65rem 1.2rem",
-      cursor:disabled?"not-allowed":"pointer", letterSpacing:"0.02em"
+      cursor:disabled?"not-allowed":"pointer"
     }}>{children}</button>
   );
 }
 
-function SaveCancel({ onCancel, onSave }) {
+function SaveCancel({ onCancel, onSave, saveLabel="Salvar" }) {
   return (
-    <div style={{ display:"flex",gap:"0.5rem",marginTop:"0.25rem" }}>
-      <button onClick={onCancel} style={{ flex:1,padding:"0.65rem",background:"#1e2d45",border:"none",borderRadius:"8px",color:"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.875rem",cursor:"pointer" }}>Cancelar</button>
-      <button onClick={onSave} style={{ flex:1,padding:"0.65rem",background:"#3b82f6",border:"none",borderRadius:"8px",color:"#fff",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.875rem",cursor:"pointer" }}>Salvar</button>
+    <div style={{ display:"flex",gap:"0.5rem",marginTop:"0.5rem" }}>
+      <button onClick={onCancel} style={{ flex:1,padding:"0.65rem",background:"#1e2d45",border:"none",borderRadius:"8px",color:"#6b7a99",fontFamily:"inherit",fontWeight:600,fontSize:"0.875rem",cursor:"pointer" }}>Cancelar</button>
+      <button onClick={onSave} style={{ flex:1,padding:"0.65rem",background:"#3b82f6",border:"none",borderRadius:"8px",color:"#fff",fontFamily:"inherit",fontWeight:600,fontSize:"0.875rem",cursor:"pointer" }}>{saveLabel}</button>
     </div>
   );
 }
@@ -74,20 +72,20 @@ function SaveCancel({ onCancel, onSave }) {
 function Empty({ icon="", text, sub }) {
   return (
     <div style={{ textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"2rem 1rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548" }}>
-      {icon&&<div style={{ fontSize:"1.5rem",marginBottom:"0.5rem" }}>{icon}</div>}
+      {icon && <div style={{ fontSize:"1.5rem",marginBottom:"0.5rem" }}>{icon}</div>}
       {text}
-      {sub&&<div style={{ fontSize:"0.72rem",marginTop:"0.4rem",color:"#4a5a70" }}>{sub}</div>}
+      {sub && <div style={{ fontSize:"0.72rem",marginTop:"0.4rem",color:"#4a5a70" }}>{sub}</div>}
     </div>
   );
 }
 
-function Section({ color, bg, label, count, children }) {
+function Section({ color, bgBadge, label, count, children }) {
   return (
     <div style={{ marginBottom:"1.5rem" }}>
       <div style={{ display:"flex",alignItems:"center",gap:"0.5rem",marginBottom:"0.75rem" }}>
         <div style={{ width:"8px",height:"8px",borderRadius:"50%",background:color,flexShrink:0 }} />
         <span style={{ fontSize:"0.72rem",fontWeight:700,color,textTransform:"uppercase",letterSpacing:"0.1em" }}>{label}</span>
-        <span style={{ fontSize:"0.7rem",color:"#6b7a99",background:bg,borderRadius:"10px",padding:"0.1rem 0.5rem" }}>{count}</span>
+        <span style={{ fontSize:"0.7rem",color:"#6b7a99",background:bgBadge,borderRadius:"10px",padding:"0.1rem 0.5rem" }}>{count}</span>
       </div>
       {children}
     </div>
@@ -100,12 +98,10 @@ function SubCard({ s, accent, border, onEdit, onDelete, pending, autoCreated }) 
       <div style={{ flex:1,minWidth:0 }}>
         <div style={{ display:"flex",alignItems:"center",gap:"0.4rem",marginBottom:"0.2rem",flexWrap:"wrap" }}>
           <span style={{ fontWeight:600,fontSize:"0.875rem" }}>{s.patient}</span>
-          {autoCreated && (
-            <span style={{ fontSize:"0.65rem",background:"#2a1a40",color:"#a78bfa",borderRadius:"5px",padding:"0.1rem 0.4rem",fontWeight:600,flexShrink:0 }}>AUTO</span>
-          )}
+          {autoCreated && <span style={{ fontSize:"0.65rem",background:"#2a1a40",color:"#a78bfa",borderRadius:"5px",padding:"0.1rem 0.4rem",fontWeight:600 }}>AUTO</span>}
         </div>
         <div style={{ fontSize:"0.78rem",color:"#6b7a99" }}>
-          <span style={{ fontFamily:"'DM Mono',monospace",color:"#94a3b8" }}>{s.time}</span>
+          <span style={{ fontFamily:"monospace",color:"#94a3b8" }}>{s.time}</span>
           {s.day && <span style={{ marginLeft:"0.35rem",color:"#64748b" }}>· {DAY_LABELS[s.day]||s.day}</span>}
           {s.therapist && <span style={{ marginLeft:"0.35rem" }}>· {s.therapist}</span>}
           {pending && <span style={{ marginLeft:"0.4rem",color:"#f59e0b",fontSize:"0.7rem" }}>aguardando terapeuta</span>}
@@ -119,687 +115,406 @@ function SubCard({ s, accent, border, onEdit, onDelete, pending, autoCreated }) 
   );
 }
 
-// ─── Main App ─────────────────────────────────────────────────────────────────
-
+// ── Main ──────────────────────────────────────────────────────────────────────
 export default function App() {
   const [tab, setTab] = useState("subs");
   const [activeDay, setActiveDay] = useState("SEG");
+  const [absenceDay, setAbsenceDay] = useState("SEG");
 
-  // Lendo do Local Save ao abrir o app
-  const [subs, setSubs] = useState(() => {
-    const saved = localStorage.getItem("gestor_subs");
-    return saved ? JSON.parse(saved) : initialSubstitutions;
-  });
+  // Persisted state
+  const [subs, setSubs] = useState(() => load("g_subs", initialSubs));
+  const [freeSlots, setFreeSlots] = useState(() => load("g_free", emptyDays));
+  const [schedules, setSchedules] = useState(() => load("g_sched", emptyDays)); // {day:[{therapist,child,time}]}
+  const [childActivities, setChildActivities] = useState(() => load("g_acts", emptyDays));
+  const [absences, setAbsences] = useState(() => load("g_abs", emptyDays));
+  const [childAbsences, setChildAbsences] = useState(() => load("g_cabs", emptyDays));
+  const [discharged, setDischarged] = useState(() => load("g_dis", []));
+  const [dischargedT, setDischargedT] = useState(() => load("g_dist", []));
 
-  const [freeSlots, setFreeSlots] = useState(() => {
-    const saved = localStorage.getItem("gestor_freeSlots");
-    return saved ? JSON.parse(saved) : initialFreeSlots;
-  });
-
-  // therapistSchedules stores occupied slots per day: { SEG:[{therapist,child,time}], ... }
-  const [therapistSchedules, setTherapistSchedules] = useState(() => {
-    const saved = localStorage.getItem("gestor_schedules");
-    return saved ? JSON.parse(saved) : { SEG:[], TER:[], QUA:[], QUI:[], SEX:[] };
-  });
-
+  // Modals & forms
   const [showSubModal, setShowSubModal] = useState(false);
   const [showSlotModal, setShowSlotModal] = useState(false);
-  const [showBulkModal, setShowBulkModal] = useState(false);
-  const [showClearConfirm, setShowClearConfirm] = useState(null); // null | "designated" | "pending" | "all"
+  const [showMultiSlot, setShowMultiSlot] = useState(false);
+  const [showBulk, setShowBulk] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(null);
+  const [confirmRemove, setConfirmRemove] = useState(null);
+  const [editingTherapist, setEditingTherapist] = useState(null);
   const [editingSub, setEditingSub] = useState(null);
   const [editingSlot, setEditingSlot] = useState(null);
   const [subForm, setSubForm] = useState({ patient:"", time:"", therapist:"", status:"Pending" });
   const [slotForm, setSlotForm] = useState({ time:"13:00", therapist:"" });
+  const [multiSlot, setMultiSlot] = useState({ therapist:"", times:[] });
   const [bulkForm, setBulkForm] = useState({ patient:"", timeFrom:"08:00", timeTo:"11:00", therapist:"" });
-  const [bulkTherapistSearch, setBulkTherapistSearch] = useState("");
-  const [childSearch, setChildSearch] = useState("");
-  const [childViewDay, setChildViewDay] = useState("SEG");
-  const [manageTab, setManageTab] = useState("therapists");
-  const [manageSearch, setManageSearch] = useState("");
-  const [confirmRemove, setConfirmRemove] = useState(null);
-  const [editingTherapist, setEditingTherapist] = useState(null);
-  const [skillsDay, setSkillsDay] = useState("SEG");
-  const [skillsSearch, setSkillsSearch] = useState("");
-  const [absencePeriods, setAbsencePeriods] = useState({}); // { "SEG||TherapistName": "manha"|"tarde"|"integral" }
-  const [entryTimeFilter, setEntryTimeFilter] = useState("08:00");
-  const [showMultiSlotModal, setShowMultiSlotModal] = useState(false);
-  const [multiSlotForm, setMultiSlotForm] = useState({ therapist:"", times:[] });
-  const [therapistAgendaFilter, setTherapistAgendaFilter] = useState("");
-  const [therapistAgendaDay, setTherapistAgendaDay] = useState("ALL");
+  const [bulkSearch, setBulkSearch] = useState("");
+  const [absencePeriods, setAbsencePeriods] = useState({});
 
+  // Upload
   const [uploading, setUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState(null);
   const [uploadPreview, setUploadPreview] = useState(null);
   const fileRef = useRef();
 
-  // ── Absences ──
-  // absences: { SEG: ["Leticia Alves", "Cassio"], TER: [], ... }
-  const [absences, setAbsences] = useState(() => {
-    const saved = localStorage.getItem("gestor_absences");
-    return saved ? JSON.parse(saved) : { SEG:[], TER:[], QUA:[], QUI:[], SEX:[] };
-  });
-  const [absenceDay, setAbsenceDay] = useState("SEG");
-
-  const [childAbsences, setChildAbsences] = useState(() => {
-    const saved = localStorage.getItem("gestor_childAbsences");
-    return saved ? JSON.parse(saved) : { SEG:[], TER:[], QUA:[], QUI:[], SEX:[] };
-  });
-
-  // Gravando no Local Save automaticamente toda vez que algo mudar
-  const [dischargedChildren, setDischargedChildren] = useState(() => {
-    const saved = localStorage.getItem("gestor_discharged");
-    return saved ? JSON.parse(saved) : [];
-  });
-  const [dischargeInput, setDischargeInput] = useState("");
-  const [dischargedTherapists, setDischargedTherapists] = useState(() => {
-    const saved = localStorage.getItem("gestor_dischargedTherapists");
-    return saved ? JSON.parse(saved) : [];
-  });
-  const [dischargeTherapistInput, setDischargeTherapistInput] = useState("");
+  // Search/filter
+  const [childSearch, setChildSearch] = useState("");
+  const [childViewDay, setChildViewDay] = useState("SEG");
+  const [manageTab, setManageTab] = useState("therapists");
+  const [manageSearch, setManageSearch] = useState("");
+  const [agendaFilter, setAgendaFilter] = useState("");
+  const [agendaDay, setAgendaDay] = useState("ALL");
+  const [entryFilter, setEntryFilter] = useState("ALL");
   const [dischargeTab, setDischargeTab] = useState("children");
-  const [childActivities, setChildActivities] = useState(() => {
-    const saved = localStorage.getItem("gestor_childActivities");
-    return saved ? JSON.parse(saved) : { SEG:[], TER:[], QUA:[], QUI:[], SEX:[] };
-  });
+  const [dischargeInput, setDischargeInput] = useState("");
+  const [dischargeInputT, setDischargeInputT] = useState("");
 
-  useEffect(() => { localStorage.setItem("gestor_subs", JSON.stringify(subs)); }, [subs]);
-  useEffect(() => { localStorage.setItem("gestor_freeSlots", JSON.stringify(freeSlots)); }, [freeSlots]);
-  useEffect(() => { localStorage.setItem("gestor_schedules", JSON.stringify(therapistSchedules)); }, [therapistSchedules]);
-  useEffect(() => { localStorage.setItem("gestor_absences", JSON.stringify(absences)); }, [absences]);
-  useEffect(() => { localStorage.setItem("gestor_discharged", JSON.stringify(dischargedChildren)); }, [dischargedChildren]);
-  useEffect(() => { localStorage.setItem("gestor_dischargedTherapists", JSON.stringify(dischargedTherapists)); }, [dischargedTherapists]);
-  useEffect(() => { localStorage.setItem("gestor_childActivities", JSON.stringify(childActivities)); }, [childActivities]);
-  useEffect(() => { localStorage.setItem("gestor_childAbsences", JSON.stringify(childAbsences)); }, [childAbsences]);
+  // Persist
+  useEffect(() => { localStorage.setItem("g_subs", JSON.stringify(subs)); }, [subs]);
+  useEffect(() => { localStorage.setItem("g_free", JSON.stringify(freeSlots)); }, [freeSlots]);
+  useEffect(() => { localStorage.setItem("g_sched", JSON.stringify(schedules)); }, [schedules]);
+  useEffect(() => { localStorage.setItem("g_acts", JSON.stringify(childActivities)); }, [childActivities]);
+  useEffect(() => { localStorage.setItem("g_abs", JSON.stringify(absences)); }, [absences]);
+  useEffect(() => { localStorage.setItem("g_cabs", JSON.stringify(childAbsences)); }, [childAbsences]);
+  useEffect(() => { localStorage.setItem("g_dis", JSON.stringify(discharged)); }, [discharged]);
+  useEffect(() => { localStorage.setItem("g_dist", JSON.stringify(dischargedT)); }, [dischargedT]);
 
-  // All known therapist names from freeSlots
-  const allTherapists = [...new Set(
-    DAYS.flatMap(d => freeSlots[d].map(s => s.therapist))
-  )].sort();
+  // Derived
+  const allTherapists = [...new Set(DAYS.flatMap(d => (freeSlots[d]||[]).map(s => s.therapist)))].sort();
+  const allChildren = [...new Set(DAYS.flatMap(d => (schedules[d]||[]).map(s => s.child)))].sort();
+  const designated = subs.filter(s => s.status === "Designated");
+  const pending = subs.filter(s => s.status === "Pending");
+  const autoPendingCount = pending.filter(s => s.autoCreated).length;
 
-  // All known children from therapistSchedules
-  const allChildren = [...new Set(
-    DAYS.flatMap(d => (therapistSchedules[d]||[]).map(s => s.child))
-  )].sort();
-
-  const dischargeChild = (childName) => {
-    if(!childName.trim()) return;
-    const name=childName.trim();
-    if(dischargedChildren.includes(name)) return;
-    setDischargedChildren(prev=>[...prev,name]);
-    setSubs(prev=>prev.filter(s=>s.patient.toLowerCase()!==name.toLowerCase()));
-    setFreeSlots(prevSlots=>{
-      const ns={...prevSlots};
-      DAYS.forEach(day=>{
-        const sessions=(therapistSchedules[day]||[]).filter(s=>s.child.toLowerCase()===name.toLowerCase());
-        sessions.forEach(({therapist,time})=>{
-          if(!(ns[day]||[]).some(s=>s.therapist===therapist&&s.time===time))
-            ns[day]=[...(ns[day]||[]),{id:Date.now()+Math.random(),time,therapist,dischargedChild:name}];
-        });
-        if(ns[day]) ns[day].sort((a,b)=>a.time.localeCompare(b.time));
-      });
-      return ns;
-    });
-  };
-  const reactivateChild = (childName) => {
-    setDischargedChildren(prev=>prev.filter(n=>n!==childName));
-    setFreeSlots(prevSlots=>{
-      const ns={...prevSlots};
-      DAYS.forEach(day=>{ ns[day]=(ns[day]||[]).filter(s=>s.dischargedChild!==childName); });
-      return ns;
-    });
-  };
-  const dischargeTherapist = (therapistName) => {
-    if(!therapistName.trim()) return;
-    const name = therapistName.trim();
-    if(dischargedTherapists.includes(name)) return;
-    const lo = name.toLowerCase();
-
-    setDischargedTherapists(prev=>[...prev, name]);
-
-    // Tira dos horários livres — ele não trabalha mais aqui
-    setFreeSlots(prevSlots=>{
-      const ns={...prevSlots};
-      DAYS.forEach(day=>{ ns[day]=(ns[day]||[]).filter(s=>s.therapist.toLowerCase()!==lo); });
-      return ns;
-    });
-
-    // Cria pendência pra cada criança que ele atendia, em TODOS os dias
-    const newPending = [];
-    DAYS.forEach(day=>{
-      (therapistSchedules[day]||[]).filter(s=>s.therapist.toLowerCase()===lo).forEach(({ child, time })=>{
-        const alreadyExists = subs.some(s=>
-          s.patient.toLowerCase()===child.toLowerCase() &&
-          s.day===day && s.status==="Pending"
-        );
-        if(!alreadyExists){
-          newPending.push({
-            id: Date.now()+Math.random(),
-            patient: child,
-            time, day,
-            therapist:"",
-            status:"Pending",
-            autoCreated:true,
-            dischargedTherapist:name,
-            activities:[]
-          });
-        }
-      });
-    });
-    if(newPending.length>0) setSubs(prev=>[...prev,...newPending]);
-  };
-
-  const reactivateTherapist = (name) => {
-    setDischargedTherapists(prev=>prev.filter(n=>n!==name));
-    setSubs(prev=>prev.filter(s=>!(s.dischargedTherapist===name && s.status==="Pending")));
-  };
-
-  const toggleAbsence = (day, name) => {
-    setAbsences(prev => {
-      const current = prev[day] || [];
-      const updated = current.includes(name) ? current.filter(n=>n!==name) : [...current, name];
-      return { ...prev, [day]: updated };
-    });
-  };
-
-  const applyAbsences = (day) => {
-    const absentTherapists = absences[day] || [];
-    if (!absentTherapists.length) return;
-
-    const getPeriod = (name) => absencePeriods[`${day}||${name}`] || "integral";
-    const inPeriod = (time, period) => {
-      const h = parseInt(time.split(":")[0], 10);
-      if (period === "manha") return h < 12;
-      if (period === "tarde") return h >= 12;
-      return true;
-    };
-
-    // Remove absent therapist free slots based on period
-    setFreeSlots(prev => {
-      const next = { ...prev };
-      absentTherapists.forEach(name => {
-        const period = getPeriod(name);
-        next[day] = (next[day] || []).filter(s =>
-          s.therapist.toLowerCase() !== name.toLowerCase() || !inPeriod(s.time, period)
-        );
-      });
-      return next;
-    });
-
-    const newPending = [];
-    absentTherapists.forEach(therapistName => {
-      const period = getPeriod(therapistName);
-      const schedule = therapistSchedules[day] || [];
-      schedule
-        .filter(s => s.therapist.toLowerCase() === therapistName.toLowerCase() && inPeriod(s.time, period))
-        .forEach(({ child, time }) => {
-          const alreadyExists = subs.some(s =>
-            s.patient.toLowerCase() === child.toLowerCase() &&
-            s.day === day && s.status === "Pending"
-          );
-          if (!alreadyExists) {
-            newPending.push({
-              id: Date.now() + Math.random(),
-              patient: child,
-              time,
-              day,
-              therapist: "",
-              status: "Pending",
-              autoCreated: true,
-              absentTherapist: therapistName,
-              activities: []
-            });
-          }
-        });
-    });
-
-    if (newPending.length > 0) setSubs(prev => [...prev, ...newPending]);
-    return newPending.length;
-  };
+  const slotsByTime = TIME_OPTIONS.reduce((acc, t) => {
+    const found = (freeSlots[activeDay]||[]).filter(s => s.time === t);
+    if (found.length) acc[t] = found;
+    return acc;
+  }, {});
 
   // ── Subs CRUD ──
-  const openAddSub = () => { setEditingSub(null); setSubForm({patient:"",time:"",therapist:"",status:"Pending"}); setShowSubModal(true); };
-  const openEditSub = s => { setEditingSub(s.id); setSubForm({patient:s.patient,time:s.time,therapist:s.therapist,status:s.status}); setShowSubModal(true); };
+  const openAddSub = () => { setEditingSub(null); setSubForm({ patient:"", time:"", therapist:"", status:"Pending" }); setShowSubModal(true); };
+  const openEditSub = s => { setEditingSub(s.id); setSubForm({ patient:s.patient, time:s.time, therapist:s.therapist, status:s.status }); setShowSubModal(true); };
   const saveSub = () => {
     if (!subForm.patient || !subForm.time) return;
-    if (editingSub) setSubs(p=>p.map(s=>s.id===editingSub?{...s,...subForm}:s));
-    else setSubs(p=>[...p,{id:Date.now(),...subForm}]);
+    if (editingSub) setSubs(p => p.map(s => s.id === editingSub ? { ...s, ...subForm } : s));
+    else setSubs(p => [...p, { id: Date.now(), ...subForm }]);
     setShowSubModal(false);
   };
-  const deleteSub = id => setSubs(p=>p.filter(s=>s.id!==id));
+  const deleteSub = id => setSubs(p => p.filter(s => s.id !== id));
+
+  // ── Free Slots CRUD ──
+  const openAddSlot = () => { setEditingSlot(null); setSlotForm({ time:"13:00", therapist:"" }); setShowSlotModal(true); };
+  const openEditSlot = s => { setEditingSlot(s.id); setSlotForm({ time:s.time, therapist:s.therapist }); setShowSlotModal(true); };
+  const saveSlot = () => {
+    if (!slotForm.therapist) return;
+    if (editingSlot) setFreeSlots(p => ({ ...p, [activeDay]: p[activeDay].map(s => s.id === editingSlot ? { ...s, ...slotForm } : s) }));
+    else setFreeSlots(p => ({ ...p, [activeDay]: [...p[activeDay], { id: Date.now(), ...slotForm }] }));
+    setShowSlotModal(false);
+  };
+  const deleteSlot = id => setFreeSlots(p => ({ ...p, [activeDay]: p[activeDay].filter(s => s.id !== id) }));
 
   const saveMultiSlot = () => {
-    if (!multiSlotForm.therapist || !multiSlotForm.times.length) return;
+    if (!multiSlot.therapist || !multiSlot.times.length) return;
     setFreeSlots(prev => {
       const next = { ...prev };
-      multiSlotForm.times.forEach(time => {
-        const exists = (next[activeDay]||[]).some(s=>s.therapist===multiSlotForm.therapist&&s.time===time);
-        if (!exists) {
-          next[activeDay] = [...(next[activeDay]||[]), { id:Date.now()+Math.random(), time, therapist:multiSlotForm.therapist }];
-        }
+      multiSlot.times.forEach(time => {
+        const exists = (next[activeDay]||[]).some(s => s.therapist === multiSlot.therapist && s.time === time);
+        if (!exists) next[activeDay] = [...(next[activeDay]||[]), { id: Date.now()+Math.random(), time, therapist: multiSlot.therapist }];
       });
-      next[activeDay].sort((a,b)=>a.time.localeCompare(b.time));
+      next[activeDay].sort((a,b) => a.time.localeCompare(b.time));
       return next;
     });
-    setMultiSlotForm({ therapist:"", times:[] });
-    setShowMultiSlotModal(false);
+    setMultiSlot({ therapist:"", times:[] });
+    setShowMultiSlot(false);
   };
 
   const saveBulk = () => {
-    if (!bulkForm.patient || !bulkForm.therapist || !bulkForm.timeFrom || !bulkForm.timeTo) return;
-    const from = bulkForm.timeFrom;
-    const to = bulkForm.timeTo;
+    if (!bulkForm.patient || !bulkForm.therapist) return;
     const patLower = bulkForm.patient.toLowerCase().trim();
-    // Convert all matching pending subs to designated
     let matched = false;
     setSubs(prev => prev.map(s => {
-      if (s.status !== "Pending") return s;
-      if (s.patient.toLowerCase().trim() !== patLower) return s;
-      // Check if sub time overlaps the range (compare HH:MM strings)
-      const t = s.time.replace(/h.*/i,"").padStart(5,"0").substring(0,5);
-      const tFmt = t.includes(":") ? t : t.replace(/(\d{2})(\d{2})/,"$1:$2");
-      const inRange = tFmt >= from && tFmt <= to;
-      if (inRange || s.time.includes("às") || s.time === bulkForm.timeFrom) {
-        matched = true;
-        return { ...s, therapist: bulkForm.therapist, status: "Designated" };
-      }
-      return s;
+      if (s.status !== "Pending" || s.patient.toLowerCase().trim() !== patLower) return s;
+      matched = true;
+      return { ...s, therapist: bulkForm.therapist, status: "Designated" };
     }));
-    // If no pending matched, create a single new Designated entry
     if (!matched) {
-      const timeStr = bulkForm.timeFrom === bulkForm.timeTo
-        ? bulkForm.timeFrom
-        : `${bulkForm.timeFrom} às ${bulkForm.timeTo}`;
-      setSubs(prev => [...prev, {
-        id: Date.now(),
-        patient: bulkForm.patient,
-        time: timeStr,
-        therapist: bulkForm.therapist,
-        status: "Designated"
-      }]);
+      const timeStr = bulkForm.timeFrom === bulkForm.timeTo ? bulkForm.timeFrom : `${bulkForm.timeFrom} às ${bulkForm.timeTo}`;
+      setSubs(prev => [...prev, { id: Date.now(), patient: bulkForm.patient, time: timeStr, therapist: bulkForm.therapist, status: "Designated" }]);
     }
     setBulkForm({ patient:"", timeFrom:"08:00", timeTo:"11:00", therapist:"" });
-    setShowBulkModal(false);
+    setShowBulk(false);
   };
 
-  const clearSubs = (type) => {
+  const clearSubs = type => {
     if (type === "designated") setSubs(p => p.filter(s => s.status !== "Designated"));
     else if (type === "pending") setSubs(p => p.filter(s => s.status !== "Pending"));
     else setSubs([]);
     setShowClearConfirm(null);
   };
 
+  // ── Absences ──
+  const toggleAbsence = (day, name) => {
+    setAbsences(prev => {
+      const cur = prev[day]||[];
+      return { ...prev, [day]: cur.includes(name) ? cur.filter(n => n !== name) : [...cur, name] };
+    });
+  };
+
+  const getPeriod = (day, name) => absencePeriods[`${day}||${name}`] || "integral";
+  const inPeriod = (time, period) => {
+    const h = parseInt(time.split(":")[0], 10);
+    if (period === "manha") return h < 12;
+    if (period === "tarde") return h >= 12;
+    return true;
+  };
+
+  const applyAbsences = day => {
+    const absent = absences[day]||[];
+    if (!absent.length) return 0;
+    setFreeSlots(prev => {
+      const next = { ...prev };
+      absent.forEach(name => {
+        const period = getPeriod(day, name);
+        next[day] = (next[day]||[]).filter(s => s.therapist.toLowerCase() !== name.toLowerCase() || !inPeriod(s.time, period));
+      });
+      return next;
+    });
+    const newPending = [];
+    absent.forEach(name => {
+      const period = getPeriod(day, name);
+      (schedules[day]||[])
+        .filter(s => s.therapist.toLowerCase() === name.toLowerCase() && inPeriod(s.time, period))
+        .forEach(({ child, time }) => {
+          const exists = subs.some(s => s.patient.toLowerCase() === child.toLowerCase() && s.day === day && s.status === "Pending");
+          if (!exists) newPending.push({ id: Date.now()+Math.random(), patient: child, time, day, therapist:"", status:"Pending", autoCreated:true, absentTherapist:name, activities:[] });
+        });
+    });
+    if (newPending.length) setSubs(prev => [...prev, ...newPending]);
+    return newPending.length;
+  };
+
+  // ── Rename / Remove ──
   const renameTherapist = (oldName, newName) => {
     if (!newName.trim() || newName.trim() === oldName) { setEditingTherapist(null); return; }
     const n = newName.trim();
     const lo = oldName.toLowerCase();
-    const ren = arr => arr.map(s => s.therapist && s.therapist.toLowerCase()===lo ? {...s, therapist:n} : s);
+    const ren = arr => arr.map(s => s.therapist && s.therapist.toLowerCase() === lo ? { ...s, therapist:n } : s);
     setFreeSlots(prev => { const nx={...prev}; DAYS.forEach(d=>{nx[d]=ren(nx[d]);}); return nx; });
-    setTherapistSchedules(prev => { const nx={...prev}; DAYS.forEach(d=>{nx[d]=ren(nx[d]);}); return nx; });
+    setSchedules(prev => { const nx={...prev}; DAYS.forEach(d=>{nx[d]=ren(nx[d]);}); return nx; });
     setChildActivities(prev => { const nx={...prev}; DAYS.forEach(d=>{nx[d]=ren(nx[d]);}); return nx; });
     setAbsences(prev => { const nx={...prev}; DAYS.forEach(d=>{nx[d]=(nx[d]||[]).map(nm=>nm.toLowerCase()===lo?n:nm);}); return nx; });
     setSubs(prev => prev.map(s => s.therapist && s.therapist.toLowerCase()===lo ? {...s,therapist:n} : s));
     setEditingTherapist(null);
   };
 
-  const removeTherapist = (name) => {
+  const removeTherapist = name => {
     const lo = name.toLowerCase();
-    setFreeSlots(prev => { const nx={...prev}; DAYS.forEach(d=>{nx[d]=nx[d].filter(s=>s.therapist.toLowerCase()!==lo);}); return nx; });
-    setTherapistSchedules(prev => { const nx={...prev}; DAYS.forEach(d=>{nx[d]=nx[d].filter(s=>s.therapist.toLowerCase()!==lo);}); return nx; });
-    setChildActivities(prev => { const nx={...prev}; DAYS.forEach(d=>{nx[d]=(nx[d]||[]).filter(a=>a.therapist.toLowerCase()!==lo);}); return nx; });
+    setFreeSlots(prev => { const nx={...prev}; DAYS.forEach(d=>{nx[d]=(nx[d]||[]).filter(s=>s.therapist.toLowerCase()!==lo);}); return nx; });
+    setSchedules(prev => { const nx={...prev}; DAYS.forEach(d=>{nx[d]=(nx[d]||[]).filter(s=>s.therapist.toLowerCase()!==lo);}); return nx; });
     setAbsences(prev => { const nx={...prev}; DAYS.forEach(d=>{nx[d]=(nx[d]||[]).filter(n=>n.toLowerCase()!==lo);}); return nx; });
     setConfirmRemove(null);
   };
 
-  const removeChild = (name) => {
+  const removeChild = name => {
     const lo = name.toLowerCase();
-    setTherapistSchedules(prev => { const nx={...prev}; DAYS.forEach(d=>{nx[d]=nx[d].filter(s=>s.child.toLowerCase()!==lo);}); return nx; });
+    setSchedules(prev => { const nx={...prev}; DAYS.forEach(d=>{nx[d]=(nx[d]||[]).filter(s=>s.child.toLowerCase()!==lo);}); return nx; });
     setChildActivities(prev => { const nx={...prev}; DAYS.forEach(d=>{nx[d]=(nx[d]||[]).filter(a=>a.child.toLowerCase()!==lo);}); return nx; });
     setSubs(prev => prev.filter(s=>s.patient.toLowerCase()!==lo));
-    setChildAbsences(prev => { const nx={...prev}; DAYS.forEach(d=>{nx[d]=(nx[d]||[]).filter(n=>n.toLowerCase()!==lo);}); return nx; });
-    setFreeSlots(prev => { const nx={...prev}; DAYS.forEach(d=>{nx[d]=nx[d].filter(s=>s.childAbsence!==name);}); return nx; });
     setConfirmRemove(null);
   };
 
-  // ── Free Slots CRUD ──
-  const openAddSlot = () => { setEditingSlot(null); setSlotForm({time:"13:00",therapist:""}); setShowSlotModal(true); };
-  const openEditSlot = s => { setEditingSlot(s.id); setSlotForm({time:s.time,therapist:s.therapist}); setShowSlotModal(true); };
-  const saveSlot = () => {
-    if (!slotForm.therapist) return;
-    if (editingSlot) setFreeSlots(p=>({...p,[activeDay]:p[activeDay].map(s=>s.id===editingSlot?{...s,...slotForm}:s)}));
-    else setFreeSlots(p=>({...p,[activeDay]:[...p[activeDay],{id:Date.now(),...slotForm}]}));
-    setShowSlotModal(false);
+  const dischargeChild = name => {
+    if (!name.trim() || discharged.includes(name)) return;
+    setDischarged(prev => [...prev, name]);
+    setSubs(prev => prev.filter(s => s.patient.toLowerCase() !== name.toLowerCase()));
+    setFreeSlots(prevSlots => {
+      const ns = {...prevSlots};
+      DAYS.forEach(day => {
+        const sessions = (schedules[day]||[]).filter(s=>s.child.toLowerCase()===name.toLowerCase());
+        sessions.forEach(({therapist,time}) => {
+          if (!(ns[day]||[]).some(s=>s.therapist===therapist&&s.time===time))
+            ns[day]=[...(ns[day]||[]),{id:Date.now()+Math.random(),time,therapist,dischargedChild:name}];
+        });
+        if (ns[day]) ns[day].sort((a,b)=>a.time.localeCompare(b.time));
+      });
+      return ns;
+    });
   };
-  const deleteSlot = id => setFreeSlots(p=>({...p,[activeDay]:p[activeDay].filter(s=>s.id!==id)}));
 
-  const slotsByTime = TIME_OPTIONS.reduce((acc,t)=>{
-    const found=(freeSlots[activeDay]||[]).filter(s=>s.time===t);
-    if(found.length) acc[t]=found;
-    return acc;
-  },{});
+  const reactivateChild = name => {
+    setDischarged(prev => prev.filter(n=>n!==name));
+    setFreeSlots(prev => { const nx={...prev}; DAYS.forEach(d=>{nx[d]=(nx[d]||[]).filter(s=>s.dischargedChild!==name);}); return nx; });
+  };
 
-  // ── Upload & AI ──
-  const toBase64 = file => new Promise((res,rej)=>{
+  const dischargeTherapist = name => {
+    if (!name.trim() || dischargedT.includes(name)) return;
+    const lo = name.toLowerCase();
+    setDischargedT(prev => [...prev, name]);
+    setFreeSlots(prev => { const nx={...prev}; DAYS.forEach(d=>{nx[d]=(nx[d]||[]).filter(s=>s.therapist.toLowerCase()!==lo);}); return nx; });
+    const newPending = [];
+    DAYS.forEach(day => {
+      (schedules[day]||[]).filter(s=>s.therapist.toLowerCase()===lo).forEach(({child,time}) => {
+        const exists = subs.some(s=>s.patient.toLowerCase()===child.toLowerCase()&&s.day===day&&s.status==="Pending");
+        if (!exists) newPending.push({id:Date.now()+Math.random(),patient:child,time,day,therapist:"",status:"Pending",autoCreated:true,dischargedTherapist:name,activities:[]});
+      });
+    });
+    if (newPending.length) setSubs(prev=>[...prev,...newPending]);
+  };
+
+  const reactivateTherapist = name => {
+    setDischargedT(prev=>prev.filter(n=>n!==name));
+    setSubs(prev=>prev.filter(s=>!(s.dischargedTherapist===name&&s.status==="Pending")));
+  };
+
+  // ── Upload ──
+  const toBase64 = file => new Promise((res,rej) => {
     const r=new FileReader();
     r.onload=()=>res(r.result.split(",")[1]);
     r.onerror=()=>rej(new Error("Falha na leitura"));
     r.readAsDataURL(file);
   });
 
-  const callGemini = async (imageParts, systemPrompt, apiKey) => {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ role: "user", parts: [...imageParts, { text: `Analise as ${imageParts.length} imagem(ns). Retorne o JSON completo. IMPORTANTE: o JSON deve ser conciso — omita campos vazios, use arrays [] para dias sem dados.` }] }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 16384 }
-      })
-    });
-    const data = await response.json();
-    if (data.error) throw new Error(`API: ${data.error.message}`);
-    if (!data.candidates || !data.candidates.length) throw new Error("Resposta vazia da IA.");
-    const finishReason = data.candidates[0].finishReason;
-    const rawText = data.candidates[0].content?.parts?.[0]?.text || "";
-    // Return object with truncation flag instead of throwing
-    return { rawText, truncated: finishReason === "MAX_TOKENS" };
+  const extractJSON = str => {
+    const start=str.indexOf("{");
+    if(start===-1) return null;
+    let depth=0;
+    for(let i=start;i<str.length;i++){
+      if(str[i]==="{") depth++;
+      else if(str[i]==="}"){depth--;if(depth===0)return str.slice(start,i+1);}
+    }
+    return null;
   };
 
   const handleFiles = async files => {
     if (!files||!files.length) return;
-    setUploading(true);
-    setUploadStatus(null);
-    setUploadPreview(null);
-
+    setUploading(true); setUploadStatus(null); setUploadPreview(null);
     try {
-      const allFiles = Array.from(files);
-      const toImgPart = async file => {
+      const imageParts = await Promise.all(Array.from(files).map(async file => {
         const b64 = await toBase64(file);
-        const mt = file.type && file.type !== "" ? file.type : (file.name.match(/\.jpe?g$/i) ? "image/jpeg" : "image/png");
-        return { inlineData: { data: b64, mimeType: mt } };
-      };
+        const mt = file.type || (file.name.match(/\.jpe?g$/i) ? "image/jpeg" : "image/png");
+        return { inlineData:{ data:b64, mimeType:mt } };
+      }));
 
-      // Split into batches of 4 images max to avoid token overflow
-      const BATCH = 2;
-      const batches = [];
-      for (let i = 0; i < allFiles.length; i += BATCH) {
-        batches.push(allFiles.slice(i, i + BATCH));
+      const apiKey = typeof VITE_GEMINI_API_KEY !== "undefined" ? VITE_GEMINI_API_KEY : (window.__GEMINI_KEY__||"");
+      if (!apiKey) throw new Error("Configure VITE_GEMINI_API_KEY no .env do projeto.");
+
+      const prompt = `Você é um extrator de agendas de clínica ABA. Responda APENAS com JSON válido, sem texto fora dele.
+
+TIPO A - TERAPEUTA: cabeçalho com nome do terapeuta, colunas SEG/TER/QUA/QUI/SEX, linhas=horários HH:MM, células=nome do paciente, VAZIA, AT, ou FUNDO PRETO.
+TIPO B - PACIENTE: cabeçalho "PACIENTE - NOME", células=tipo de atividade.
+
+REGRAS:
+- Linha FUNDO PRETO = terapeuta ausente o dia inteiro (absentDays)
+- Célula "AT" = ausente naquele horário (não livre, não ocupado)
+- Célula VAZIA em dia sem fundo preto = livre (reason:"empty")
+- "Autocuidado (TO)" ou "Hab. Sociais (Psicoterapia)" na agenda do paciente = terapeuta livre (reason:"specialist") E não gerar pendência
+- Qualquer outra atividade sem terapeuta correspondente = pendência
+- occupiedSlots = horários em que o terapeuta ESTÁ atendendo (não livre, não AT, não ausente)
+
+RETORNE APENAS:
+{"therapists":[{"name":"Nome","absentDays":["SEG"],"freeSlots":{"SEG":[],"TER":[{"time":"08:00","reason":"empty"}],"QUA":[],"QUI":[],"SEX":[]},"occupiedSlots":{"SEG":[{"time":"08:00","child":"Nome"}],"TER":[],"QUA":[],"QUI":[],"SEX":[]}}],"crossReferences":[{"child":"Nome","therapist":"Nome","day":"QUA","time":"13:00","activity":"Autocuidado (TO)","therapistFree":true}],"pendingChildren":[{"child":"Nome","day":"TER","time":"14:00","activity":"Hab. Academicas"}]}`;
+
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({ systemInstruction:{parts:[{text:prompt}]}, contents:[{role:"user",parts:[...imageParts,{text:`Analise as ${files.length} imagem(ns) e retorne o JSON.`}]}], generationConfig:{temperature:0.1,maxOutputTokens:8192} })
+      });
+
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.message);
+      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text||"";
+      const jsonStr = extractJSON(rawText);
+      if (!jsonStr) {
+        const lower = rawText.toLowerCase();
+        if (lower.includes("tipo b")||lower.includes("paciente")) throw new Error("Só agendas de crianças detectadas — inclua também as agendas dos terapeutas.");
+        throw new Error("Nenhum JSON encontrado na resposta.");
       }
-
-      const imageParts = await Promise.all(allFiles.map(toImgPart));
-      // Use first batch approach but keep all parts for single call if <=4
-      const useAllAtOnce = allFiles.length <= 2;
-
-      const systemPrompt = `Você é um extrator de dados de agendas de clínica de terapia infantil. Responda APENAS com JSON, sem texto antes ou depois.
-
-DOIS tipos de agenda:
-
-TIPO A - TERAPEUTA:
-- Cabecalho: nome do terapeuta (ex: "ATC 05 - LETICIA ALVES SOBRAL" converte para "Leticia Alves Sobral")
-- Colunas: SEG, TER, QUA, QUI, SEX
-- Linhas: horarios HH:MM
-- Celulas: nome do paciente, VAZIA, "AT", ou linha com FUNDO PRETO
-
-TIPO B - PACIENTE/CRIANCA:
-- Cabecalho: "PACIENTE - NOME"
-- Celulas: tipo de atividade
-
-AUSENCIA DO TERAPEUTA (nao esta na clinica):
-- Linha com FUNDO PRETO em qualquer horario do dia: terapeuta AUSENTE o dia inteiro. Nenhum horario desse dia e livre. Adicionar o dia em absentDays.
-- Celula com "AT" ou "A.T.": terapeuta ausente naquele horario especifico. Nao e livre nem ocupado.
-
-TERAPEUTA LIVRE (presente na clinica, sem paciente):
-- Celula VAZIA em dia sem linha preta: livre, reason:"empty"
-// DEPOIS
-- "Autocuidado (TO)", "Hab. Sociais (Psicoterapia)", "ESPECIFICA / FONO", "ESPECIFICA / MOTORAS" ou "PSICOMOTRICIDADE": com especialista, nao gerar pendencia
-
-TERAPEUTA OCUPADO:
-- Celula com nome de paciente sem cruzamento com especialista
-- "Autocuidado" sem "(TO)": ocupado
-- "Hab. Sociais" sem "(Psicoterapia)": ocupado
-
-PENDENCIAS:
-Para cada crianca TIPO B, em cada dia/hora com atividade:
-// DEPOIS
-- "Autocuidado (TO)", "Hab. Sociais (Psicoterapia)", "ESPECIFICA / FONO", "ESPECIFICA / MOTORAS" ou "PSICOMOTRICIDADE": com especialista, nao gerar pendencia
-- Qualquer outra atividade: verificar se algum terapeuta TIPO A tem o nome dessa crianca nesse dia/hora E nao esta ausente
-  - SIM: OK, tem terapeuta
-  - NAO: pendencia automatica
-
-RETORNE APENAS ESTE JSON SEM MARKDOWN:
-{"therapists":[{"name":"Nome Terapeuta","absentDays":["SEG"],"freeSlots":{"SEG":[],"TER":[{"time":"08:00","reason":"empty"}],"QUA":[{"time":"13:00","reason":"specialist","child":"Nome","activity":"Autocuidado (TO)"}],"QUI":[],"SEX":[]},"occupiedSlots":{"SEG":[],"TER":[{"time":"09:00","child":"Nome Paciente"}],"QUA":[],"QUI":[],"SEX":[]}}],"crossReferences":[{"child":"Nome","therapist":"Nome","day":"QUA","time":"13:00","activity":"Autocuidado (TO)","therapistFree":true}],"pendingChildren":[{"child":"Nome","day":"TER","time":"14:00","activity":"Hab. Academicas"}],"occupiedSlots":{"SEG":[{"time":"08:00","child":"Nome Paciente"}],"TER":[],"QUA":[],"QUI":[],"SEX":[]}}
-
-Regras finais:
-- absentDays: dias com linha preta
-- Sem agendas de criancas: pendingChildren:[], crossReferences:[]
-- Sem agendas de terapeutas: therapists:[]
-- occupiedSlots: para cada terapeuta, os horarios em que ele ESTA ATENDENDO um paciente (nao livre, nao AT, nao linha preta). Formato: {"SEG":[{"time":"08:00","child":"Nome Paciente"}], ...}
-- childOnlyActivities: array de { child, day, time, activity } para TODAS as atividades encontradas nas agendas TIPO B, independente de ter terapeuta ou não. Use este campo sempre que houver agendas de crianças.
-- NUNCA escreva texto fora do JSON`;
-
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      if (!apiKey) throw new Error("Chave de API da IA não encontrada nas configurações.");
-
-      const extractJSON = (str, allowPartial = false) => {
-        const start = str.indexOf("{");
-        if (start === -1) throw new Error("NO_JSON");
-        let depth = 0;
-        for (let i = start; i < str.length; i++) {
-          if (str[i] === "{") depth++;
-          else if (str[i] === "}") { depth--; if (depth === 0) return str.slice(start, i+1); }
-        }
-        if (!allowPartial) throw new Error("JSON incompleto");
-        // Try to recover truncated JSON by closing open structures
-        let partial = str.slice(start);
-        // Remove trailing incomplete key/value
-        partial = partial.replace(/,?\s*"[^"]*"\s*:\s*[^,}\]]*$/, "");
-        partial = partial.replace(/,\s*$/, "");
-        // Close open arrays and objects
-        let od = 0, ad = 0;
-        for (const ch of partial) { if(ch==="{") od++; else if(ch==="}") od--; else if(ch==="[") ad++; else if(ch==="]") ad--; }
-        partial += "]".repeat(Math.max(0, ad)) + "}".repeat(Math.max(0, od));
-        try { JSON.parse(partial); return partial; } catch(e) { throw new Error("JSON incompleto mesmo após recuperação"); }
-      };
-
-      const parseRaw = (rawText, allowPartial = false) => {
-        if (!rawText || !rawText.includes("{")) return { therapists:[], crossReferences:[], pendingChildren:[], childOnlyActivities:[] };
-        const jsonStr = extractJSON(rawText, allowPartial);
-        return JSON.parse(jsonStr);
-      };
-
-      let allTherapists = [], allCrossRefs = [], allPendingChildren = [], allChildActivities = [];
-
-      const mergeResult = (parsed) => {
-        const existingNames = new Set(allTherapists.map(t=>t.name.toLowerCase()));
-        (parsed.therapists||[]).forEach(t => {
-          if (!existingNames.has(t.name.toLowerCase())) { allTherapists.push(t); existingNames.add(t.name.toLowerCase()); }
-        });
-        allCrossRefs = [...allCrossRefs, ...(parsed.crossReferences||[])];
-        allPendingChildren = [...allPendingChildren, ...(parsed.pendingChildren||[])];
-        allChildActivities = [...allChildActivities, ...(parsed.childOnlyActivities||[])];
-      };
-
-      const processImgPart = async (parts, label) => {
-        const { rawText, truncated } = await callGemini(parts, systemPrompt, apiKey);
-        if (truncated) {
-          // Try partial recovery first
-          try {
-            const parsed = parseRaw(rawText, true);
-            mergeResult(parsed);
-            return;
-          } catch(e) {}
-          // If recovery failed and multiple images, retry one by one
-          if (parts.length > 1) {
-            for (let i = 0; i < parts.length; i++) {
-              setUploadStatus({ ok:null, message:`⏳ ${label} — retentando imagem ${i+1}/${parts.length}...` });
-              const { rawText: rt2, truncated: tr2 } = await callGemini([parts[i]], systemPrompt, apiKey);
-              const parsed = parseRaw(rt2, tr2);
-              mergeResult(parsed);
-            }
-          } else {
-            // Single image still truncated — recover what we can
-            const parsed = parseRaw(rawText, true);
-            mergeResult(parsed);
-          }
-        } else {
-          mergeResult(parseRaw(rawText));
-        }
-      };
-
-      // Build all batch parts upfront
-      const allParts = await Promise.all(allFiles.map(toImgPart));
-
-      if (useAllAtOnce) {
-        await processImgPart(allParts, "Processando");
-      } else {
-        for (let b = 0; b < batches.length; b++) {
-          setUploadStatus({ ok:null, message:`⏳ Processando lote ${b+1} de ${batches.length}...` });
-          const batchParts = allParts.slice(b * 2, b * 2 + 2);
-          await processImgPart(batchParts, `Lote ${b+1}/${batches.length}`);
-        }
-        setUploadStatus(null);
-      }
-
-      const therapists = allTherapists;
-      const crossRefs = allCrossRefs;
-      const pendingChildren = allPendingChildren;
-
-      setUploadPreview({ therapists, crossRefs, pendingChildren, childOnlyActivities: allChildActivities });
+      const parsed = JSON.parse(jsonStr);
+      setUploadPreview({ therapists:parsed.therapists||[], crossRefs:parsed.crossReferences||[], pendingChildren:parsed.pendingChildren||[] });
       setUploading(false);
-
     } catch(err) {
       setUploading(false);
-      setUploadStatus({ ok:false, message:"Erro ao processar: "+err.message });
+      setUploadStatus({ ok:false, message:"Erro: "+err.message });
     }
   };
 
   const confirmUpload = () => {
     if (!uploadPreview) return;
-    const { therapists, pendingChildren, childOnlyActivities = [], crossRefs = [] } = uploadPreview;
+    const { therapists, pendingChildren, crossRefs=[] } = uploadPreview;
 
-    // Build therapistSchedules + childActivities
-    const newSchedules = { SEG:[], TER:[], QUA:[], QUI:[], SEX:[] };
-    const newActivities = { SEG:[], TER:[], QUA:[], QUI:[], SEX:[] };
-    therapists.forEach(({ name, freeSlots: fs, occupiedSlots }) => {
-      if (occupiedSlots) {
-        DAYS.forEach(day => {
-          (occupiedSlots[day]||[]).forEach(({ time, child, activity }) => {
-            newSchedules[day].push({ therapist: name, child, time });
-            if (child) newActivities[day].push({ child, time, activity: activity||"", therapist: name });
-          });
+    // Build schedules & activities
+    const newSched = { SEG:[], TER:[], QUA:[], QUI:[], SEX:[] };
+    const newActs = { SEG:[], TER:[], QUA:[], QUI:[], SEX:[] };
+    therapists.forEach(({ name, occupiedSlots }) => {
+      if (occupiedSlots) DAYS.forEach(day => {
+        (occupiedSlots[day]||[]).forEach(({ time, child }) => {
+          newSched[day].push({ therapist:name, child, time });
+          if (child) newActs[day].push({ child, time, activity:"", therapist:name });
         });
-      }
+      });
     });
     crossRefs.forEach(({ child, therapist, day, time, activity }) => {
-      if (newActivities[day] && !newActivities[day].some(a=>a.child===child&&a.time===time))
-        newActivities[day].push({ child, time, activity: activity||"", therapist: therapist||"Especialista" });
+      if (!newActs[day].some(a=>a.child===child&&a.time===time)) newActs[day].push({ child, time, activity:activity||"", therapist:therapist||"Especialista" });
     });
     pendingChildren.forEach(({ child, day, time, activity }) => {
-      if (newActivities[day] && !newActivities[day].some(a=>a.child===child&&a.time===time))
-        newActivities[day].push({ child, time, activity: activity||"", therapist: "" });
-    });
-    // Merge childOnlyActivities (from TIPO B only uploads)
-    const childOnlyByDay = { SEG:[], TER:[], QUA:[], QUI:[], SEX:[] };
-    childOnlyActivities.forEach(({ child, day, time, activity }) => {
-      if (childOnlyByDay[day] && !newActivities[day].some(a=>a.child===child&&a.time===time)) {
-        childOnlyByDay[day].push({ child, time, activity: activity||"", therapist:"" });
-      }
-    });
-    DAYS.forEach(day => {
-      newActivities[day] = [...newActivities[day], ...childOnlyByDay[day]];
+      if (!newActs[day].some(a=>a.child===child&&a.time===time)) newActs[day].push({ child, time, activity:activity||"", therapist:"" });
     });
 
-    setChildActivities(prev => {
-      const merged = {...prev};
+    setSchedules(prev => {
+      const merged={...prev};
       DAYS.forEach(day => {
-        const nc = new Set(newActivities[day].map(a=>a.child.toLowerCase()));
-        merged[day] = [...prev[day].filter(a=>!nc.has(a.child.toLowerCase())), ...newActivities[day]];
+        const newNames=new Set(newSched[day].map(s=>s.therapist.toLowerCase()));
+        merged[day]=[...prev[day].filter(s=>!newNames.has(s.therapist.toLowerCase())),...newSched[day]];
+      });
+      return merged;
+    });
+    setChildActivities(prev => {
+      const merged={...prev};
+      DAYS.forEach(day => {
+        const newCh=new Set(newActs[day].map(a=>a.child.toLowerCase()));
+        merged[day]=[...prev[day].filter(a=>!newCh.has(a.child.toLowerCase())),...newActs[day]];
         merged[day].sort((a,b)=>a.time.localeCompare(b.time));
       });
       return merged;
     });
-    // Merge with existing (keep schedules from previous imports)
-    setTherapistSchedules(prev => {
-      const merged = { ...prev };
-      DAYS.forEach(day => {
-        const existingTherapists = new Set(newSchedules[day].map(s=>s.therapist.toLowerCase()));
-        merged[day] = [
-          ...prev[day].filter(s=>!existingTherapists.has(s.therapist.toLowerCase())),
-          ...newSchedules[day]
-        ];
-      });
-      return merged;
-    });
 
-    // ── Update free slots ──
-    const newSlots = { SEG:[...freeSlots.SEG], TER:[...freeSlots.TER], QUA:[...freeSlots.QUA], QUI:[...freeSlots.QUI], SEX:[...freeSlots.SEX] };
-    const uploadedNames = therapists.map(t=>t.name.toLowerCase().trim());
-    DAYS.forEach(day=>{ newSlots[day]=newSlots[day].filter(s=>!uploadedNames.includes(s.therapist.toLowerCase().trim())); });
-    therapists.forEach(({ name, freeSlots: fs })=>{
+    // Free slots
+    const newSlots={...emptyDays, SEG:[...freeSlots.SEG], TER:[...freeSlots.TER], QUA:[...freeSlots.QUA], QUI:[...freeSlots.QUI], SEX:[...freeSlots.SEX]};
+    const uNames=therapists.map(t=>t.name.toLowerCase().trim());
+    DAYS.forEach(day=>{newSlots[day]=newSlots[day].filter(s=>!uNames.includes(s.therapist.toLowerCase().trim()));});
+    therapists.forEach(({name,freeSlots:fs})=>{
       DAYS.forEach(day=>{
         (fs[day]||[]).forEach(slot=>{
-          const time = typeof slot==="string"?slot:slot.time;
-          newSlots[day].push({ id:Date.now()+Math.random(), time, therapist:name });
+          const time=typeof slot==="string"?slot:slot.time;
+          newSlots[day].push({id:Date.now()+Math.random(),time,therapist:name});
         });
       });
     });
-    DAYS.forEach(day=>{ newSlots[day].sort((a,b)=>a.time.localeCompare(b.time)); });
+    DAYS.forEach(day=>{newSlots[day].sort((a,b)=>a.time.localeCompare(b.time));});
     setFreeSlots(newSlots);
 
-    // ── Auto-create pending substitutions ──
-    // Group pending by child+day so we build a time range string
-    if (pendingChildren.length > 0) {
-      const grouped = {};
-      pendingChildren.forEach(({ child, day, time, activity }) => {
-        const key = `${child}||${day}`;
-        if (!grouped[key]) grouped[key] = { child, day, times:[], activities:[] };
-        grouped[key].times.push(time);
-        grouped[key].activities.push(activity);
+    // Auto-pending
+    if (pendingChildren.length) {
+      const grouped={};
+      pendingChildren.forEach(({child,day,time,activity})=>{
+        const key=`${child}||${day}`;
+        if (!grouped[key]) grouped[key]={child,day,times:[],activities:[]};
+        grouped[key].times.push(time); grouped[key].activities.push(activity);
       });
-
-      const newPending = Object.values(grouped).map(({ child, day, times, activities }) => {
+      const newPending=Object.values(grouped).map(({child,day,times,activities})=>{
         times.sort();
-        const timeStr = times.length===1
-          ? times[0]
-          : `${times[0]} às ${times[times.length-1]}`;
-        return {
-          id: Date.now()+Math.random(),
-          patient: child,
-          time: timeStr,
-          day,
-          therapist: "",
-          status: "Pending",
-          autoCreated: true,
-          activities: [...new Set(activities)]
-        };
+        const timeStr=times.length===1?times[0]:`${times[0]} às ${times[times.length-1]}`;
+        return {id:Date.now()+Math.random(),patient:child,time:timeStr,day,therapist:"",status:"Pending",autoCreated:true,activities:[...new Set(activities)]};
       });
-
-      // Avoid duplicates: remove existing auto-pending for same child+day, then add new
-      setSubs(prev => {
-        const childDayKeys = newPending.map(p=>`${p.patient.toLowerCase()}||${p.day}`);
-        const filtered = prev.filter(s => {
-          if (!s.autoCreated) return true;
-          const k = `${s.patient.toLowerCase()}||${s.day}`;
-          return !childDayKeys.includes(k);
-        });
-        return [...filtered, ...newPending];
+      setSubs(prev=>{
+        const keys=newPending.map(p=>`${p.patient.toLowerCase()}||${p.day}`);
+        return [...prev.filter(s=>!s.autoCreated||!keys.includes(`${s.patient.toLowerCase()}||${s.day}`)),...newPending];
       });
     }
 
     setUploadPreview(null);
-    const pendingMsg = pendingChildren.length>0 ? ` · ${Object.keys(
-      pendingChildren.reduce((a,c)=>({...a,[`${c.child}||${c.day}`]:1}),{})
-    ).length} pendência(s) criadas automaticamente` : "";
-    const childActivitiesCount = childOnlyActivities.length;
-    const childMsg = childActivitiesCount > 0 && !therapists.length ? `✅ Agendas de crianças importadas (${childActivitiesCount} atividades registradas)` : `✅ ${therapists.length} terapeuta(s) importado(s)${pendingMsg}${childActivitiesCount>0?` · ${childActivitiesCount} atividade(s) de crianças`:""}`;
-    setUploadStatus({ ok:true, message: childMsg });
-    setTimeout(()=>setUploadStatus(null), 5000);
+    setUploadStatus({ ok:true, message:`✅ ${therapists.length} terapeuta(s) importado(s)${pendingChildren.length?` · ${pendingChildren.length} pendência(s) criadas`:""}` });
+    setTimeout(()=>setUploadStatus(null),5000);
   };
 
-  const designated = subs.filter(s=>s.status==="Designated");
-  const pending = subs.filter(s=>s.status==="Pending");
-  const autoPendingCount = pending.filter(s=>s.autoCreated).length;
-
-  // ── Render ──
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <>
       <style>{`
@@ -808,12 +523,11 @@ Regras finais:
         body{background:#0a0e14;}
         ::-webkit-scrollbar{width:4px;}
         ::-webkit-scrollbar-thumb{background:#2a3548;border-radius:4px;}
-        input::placeholder{color:#3a4a60;}
+        input::placeholder,textarea::placeholder{color:#3a4a60;}
       `}</style>
-
       <div style={{ minHeight:"100vh",background:"#0a0e14",fontFamily:"'DM Sans',sans-serif",color:"#e8f0fe",maxWidth:"480px",margin:"0 auto" }}>
 
-        {/* ── Header ── */}
+        {/* Header */}
         <div style={{ padding:"1.5rem 1.25rem 0.75rem",borderBottom:"1px solid #141b26" }}>
           <div style={{ display:"flex",alignItems:"center",gap:"0.6rem",marginBottom:"1.25rem" }}>
             <div style={{ width:"32px",height:"32px",borderRadius:"8px",background:"linear-gradient(135deg,#3b82f6,#6366f1)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"1rem" }}>🏥</div>
@@ -824,42 +538,22 @@ Regras finais:
           </div>
           <div style={{ display:"flex",flexDirection:"column",gap:"0.35rem" }}>
             <div style={{ display:"flex",gap:"0.4rem" }}>
-              {[
-                ["subs", pending.length>0 ? `🔁 Substituições (${pending.length})` : "🔁 Substituições"],
-                ["free","🧑‍⚕️ Terapeutas Livres"]
-              ].map(([key,label])=>(
-                <button key={key} onClick={()=>setTab(key)} style={{
-                  flex:1,padding:"0.55rem 0.4rem",borderRadius:"10px",border:"none",cursor:"pointer",
-                  background:tab===key?"#1e2d45":"transparent",
-                  color:tab===key?"#3b82f6":"#6b7a99",
-                  fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.73rem",
-                  borderBottom:tab===key?"2px solid #3b82f6":"2px solid transparent"
-                }}>{label}</button>
+              {[["subs",`🔁 Substituições${pending.length>0?` (${pending.length})`:""}`,null],["free","🧑‍⚕️ Terapeutas Livres",null]].map(([key,label])=>(
+                <button key={key} onClick={()=>setTab(key)} style={{ flex:1,padding:"0.55rem 0.4rem",borderRadius:"10px",border:"none",cursor:"pointer",background:tab===key?"#1e2d45":"transparent",color:tab===key?"#3b82f6":"#6b7a99",fontFamily:"inherit",fontWeight:600,fontSize:"0.73rem",borderBottom:tab===key?"2px solid #3b82f6":"2px solid transparent" }}>{label}</button>
               ))}
             </div>
             <div style={{ display:"flex",gap:"0.3rem",overflowX:"auto",paddingBottom:"0.1rem" }}>
               {[
-                ["absent", (absences[absenceDay]||[]).length>0 ? `📌 Faltas` : "📌 Faltas"],
-                ["discharged", (dischargedChildren.length+dischargedTherapists.length)>0 ? `🚪 (${dischargedChildren.length+dischargedTherapists.length})` : "🚪 Deslig."],
-                ["children","👶 Crianças"],
-                ["entries","🗺️ Entradas"],
-                ["agenda","📅 Agenda"],
-                ["upload","📋 Importar"],
-                ["manage","⚙️ Gerenciar"]
-              ].map(([key,label])=>{
-                const colors = { absent:"#f87171", children:"#a78bfa", entries:"#34d399", agenda:"#60a5fa", manage:"#94a3b8", upload:"#3b82f6" };
-                const borders = { absent:"#dc2626", children:"#7c3aed", entries:"#10b981", agenda:"#2563eb", manage:"#64748b", upload:"#3b82f6" };
-                return (
-                  <button key={key} onClick={()=>setTab(key)} style={{
-                    flexShrink:0,padding:"0.5rem 0.55rem",borderRadius:"8px",border:"none",cursor:"pointer",
-                    background:tab===key?"#1e2d45":"transparent",
-                    color:tab===key?(colors[key]||"#3b82f6"):"#6b7a99",
-                    fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.62rem",
-                    borderBottom:tab===key?`2px solid ${borders[key]||"#3b82f6"}`:"2px solid transparent",
-                    whiteSpace:"nowrap"
-                  }}>{label}</button>
-                );
-              })}
+                ["absent","📌 Faltas","#f87171","#dc2626"],
+                ["discharged","🚪 Deslig.","#fb923c","#f97316"],
+                ["children","👶 Crianças","#a78bfa","#7c3aed"],
+                ["entries","🗺️ Entradas","#34d399","#10b981"],
+                ["agenda","📅 Agenda","#60a5fa","#2563eb"],
+                ["upload","📋 Importar","#3b82f6","#3b82f6"],
+                ["manage","⚙️ Gerenciar","#94a3b8","#64748b"],
+              ].map(([key,label,activeColor,activeBorder])=>(
+                <button key={key} onClick={()=>setTab(key)} style={{ flexShrink:0,padding:"0.5rem 0.55rem",borderRadius:"8px",border:"none",cursor:"pointer",background:tab===key?"#1e2d45":"transparent",color:tab===key?activeColor:"#6b7a99",fontFamily:"inherit",fontWeight:600,fontSize:"0.62rem",borderBottom:tab===key?`2px solid ${activeBorder}`:"2px solid transparent",whiteSpace:"nowrap" }}>{label}</button>
+              ))}
             </div>
           </div>
         </div>
@@ -870,44 +564,29 @@ Regras finais:
             <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.75rem" }}>
               <span style={{ fontWeight:700,fontSize:"0.85rem" }}>Todas as Substituições</span>
               <div style={{ display:"flex",gap:"0.4rem" }}>
-                <Btn onClick={()=>setShowBulkModal(true)} small color="#16a34a">⚡ Designar</Btn>
+                <Btn onClick={()=>setShowBulk(true)} small color="#16a34a">⚡ Designar</Btn>
                 <Btn onClick={openAddSub} small>+ Adicionar</Btn>
               </div>
             </div>
             <div style={{ display:"flex",gap:"0.4rem",marginBottom:"1.25rem" }}>
-              <button onClick={()=>setShowClearConfirm("designated")} style={{ flex:1,padding:"0.35rem 0.5rem",background:"#1e2d45",border:"1px solid #2a3548",borderRadius:"7px",color:"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:500,fontSize:"0.7rem",cursor:"pointer" }}>🗑 Limpar Designadas</button>
-              <button onClick={()=>setShowClearConfirm("pending")} style={{ flex:1,padding:"0.35rem 0.5rem",background:"#1e2d45",border:"1px solid #2a3548",borderRadius:"7px",color:"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:500,fontSize:"0.7rem",cursor:"pointer" }}>🗑 Limpar Pendentes</button>
-              <button onClick={()=>setShowClearConfirm("all")} style={{ flex:1,padding:"0.35rem 0.5rem",background:"#3d1515",border:"1px solid #7f1d1d",borderRadius:"7px",color:"#f87171",fontFamily:"'DM Sans',sans-serif",fontWeight:500,fontSize:"0.7rem",cursor:"pointer" }}>🗑 Limpar Tudo</button>
+              {[["designated","🗑 Designadas"],["pending","🗑 Pendentes"],["all","🗑 Tudo"]].map(([type,label])=>(
+                <button key={type} onClick={()=>setShowClearConfirm(type)} style={{ flex:1,padding:"0.35rem 0.4rem",background:type==="all"?"#3d1515":"#1e2d45",border:`1px solid ${type==="all"?"#7f1d1d":"#2a3548"}`,borderRadius:"7px",color:type==="all"?"#f87171":"#6b7a99",fontFamily:"inherit",fontWeight:500,fontSize:"0.68rem",cursor:"pointer" }}>{label}</button>
+              ))}
             </div>
-
-            {/* Auto-pending notice */}
             {autoPendingCount>0 && (
               <div style={{ background:"#1a1040",border:"1px solid #4c1d95",borderRadius:"10px",padding:"0.75rem 1rem",marginBottom:"1.25rem",display:"flex",alignItems:"center",gap:"0.6rem" }}>
-                <span style={{ fontSize:"1rem" }}>🤖</span>
+                <span>🤖</span>
                 <div>
                   <div style={{ fontSize:"0.78rem",fontWeight:600,color:"#a78bfa" }}>{autoPendingCount} pendência(s) criadas automaticamente</div>
-                  <div style={{ fontSize:"0.72rem",color:"#6b7a99",marginTop:"0.1rem" }}>Crianças sem terapeuta detectadas na importação</div>
+                  <div style={{ fontSize:"0.72rem",color:"#6b7a99",marginTop:"0.1rem" }}>Crianças sem terapeuta detectadas</div>
                 </div>
               </div>
             )}
-
-            <Section color="#3b82f6" bg="#1e2d45" label="Designadas" count={designated.length}>
-              {designated.length===0
-                ? <Empty text="Nenhuma substituição designada" />
-                : designated.map(s=>(
-                  <SubCard key={s.id} s={s} accent="#3b82f6" border="#1e2d45"
-                    onEdit={()=>openEditSub(s)} onDelete={()=>deleteSub(s.id)} />
-                ))}
+            <Section color="#3b82f6" bgBadge="#1e2d45" label="Designadas" count={designated.length}>
+              {designated.length===0 ? <Empty text="Nenhuma substituição designada" /> : designated.map(s=><SubCard key={s.id} s={s} accent="#3b82f6" border="#1e2d45" onEdit={()=>openEditSub(s)} onDelete={()=>deleteSub(s.id)} />)}
             </Section>
-
-            <Section color="#f59e0b" bg="#2a2010" label="Pendentes" count={pending.length}>
-              {pending.length===0
-                ? <Empty text="Nenhuma substituição pendente" />
-                : pending.map(s=>(
-                  <SubCard key={s.id} s={s} accent="#f59e0b" border="#2a2010"
-                    onEdit={()=>openEditSub(s)} onDelete={()=>deleteSub(s.id)}
-                    pending autoCreated={s.autoCreated} />
-                ))}
+            <Section color="#f59e0b" bgBadge="#2a2010" label="Pendentes" count={pending.length}>
+              {pending.length===0 ? <Empty text="Nenhuma substituição pendente" /> : pending.map(s=><SubCard key={s.id} s={s} accent="#f59e0b" border="#2a2010" onEdit={()=>openEditSub(s)} onDelete={()=>deleteSub(s.id)} pending autoCreated={s.autoCreated} />)}
             </Section>
           </div>
         )}
@@ -917,32 +596,23 @@ Regras finais:
           <div style={{ padding:"1.25rem" }}>
             <div style={{ display:"flex",gap:"0.4rem",marginBottom:"1.25rem",overflowX:"auto",paddingBottom:"0.25rem" }}>
               {DAYS.map(d=>(
-                <button key={d} onClick={()=>setActiveDay(d)} style={{
-                  flexShrink:0,padding:"0.45rem 0.75rem",borderRadius:"8px",border:"none",cursor:"pointer",
-                  background:activeDay===d?"#3b82f6":"#141b26",
-                  color:activeDay===d?"#fff":"#6b7a99",
-                  fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.78rem"
-                }}>
-                  {DAY_LABELS[d]}
-                  {freeSlots[d].length>0&&<span style={{ marginLeft:"0.3rem",background:activeDay===d?"rgba(255,255,255,0.25)":"#1e2d45",borderRadius:"10px",padding:"0.05rem 0.35rem",fontSize:"0.65rem" }}>{freeSlots[d].length}</span>}
+                <button key={d} onClick={()=>setActiveDay(d)} style={{ flexShrink:0,padding:"0.45rem 0.75rem",borderRadius:"8px",border:"none",cursor:"pointer",background:activeDay===d?"#3b82f6":"#141b26",color:activeDay===d?"#fff":"#6b7a99",fontFamily:"inherit",fontWeight:600,fontSize:"0.78rem" }}>
+                  {DAY_LABELS[d]}{freeSlots[d].length>0&&<span style={{ marginLeft:"0.3rem",background:activeDay===d?"rgba(255,255,255,0.25)":"#1e2d45",borderRadius:"10px",padding:"0.05rem 0.35rem",fontSize:"0.65rem" }}>{freeSlots[d].length}</span>}
                 </button>
               ))}
             </div>
-
             <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1rem" }}>
               <span style={{ fontWeight:700,fontSize:"0.85rem" }}>{DAY_LABELS[activeDay]}</span>
               <div style={{ display:"flex",gap:"0.4rem" }}>
-                <Btn onClick={()=>{ setMultiSlotForm({therapist:"",times:[]}); setShowMultiSlotModal(true); }} small color="#16a34a">⚡ Múltiplos</Btn>
+                <Btn onClick={()=>{setMultiSlot({therapist:"",times:[]});setShowMultiSlot(true);}} small color="#16a34a">⚡ Múltiplos</Btn>
                 <Btn onClick={openAddSlot} small>+ Adicionar</Btn>
               </div>
             </div>
-
-            {Object.keys(slotsByTime).length===0
-              ? <Empty icon="📭" text={`Nenhum terapeuta livre em ${DAY_LABELS[activeDay]}`} sub="Importe agendas na aba 📋 ou adicione manualmente" />
-              : Object.entries(slotsByTime).map(([time,therapists])=>(
+            {Object.keys(slotsByTime).length===0 ? <Empty icon="📭" text={`Nenhum terapeuta livre em ${DAY_LABELS[activeDay]}`} sub="Importe agendas ou adicione manualmente" /> :
+              Object.entries(slotsByTime).map(([time,therapists])=>(
                 <div key={time} style={{ marginBottom:"1.1rem" }}>
                   <div style={{ display:"flex",alignItems:"center",gap:"0.6rem",marginBottom:"0.5rem" }}>
-                    <span style={{ fontFamily:"'DM Mono',monospace",fontWeight:500,fontSize:"0.9rem",color:"#3b82f6",background:"#1e2d45",borderRadius:"6px",padding:"0.15rem 0.55rem" }}>{time}</span>
+                    <span style={{ fontFamily:"monospace",fontWeight:500,fontSize:"0.9rem",color:"#3b82f6",background:"#1e2d45",borderRadius:"6px",padding:"0.15rem 0.55rem" }}>{time}</span>
                     <div style={{ flex:1,height:"1px",background:"#1e2d45" }} />
                   </div>
                   {therapists.map(s=>(
@@ -960,406 +630,101 @@ Regras finais:
           </div>
         )}
 
-        {/* ── IMPORTAR AGENDA ── */}
-        {tab==="upload" && (
-          <div style={{ padding:"1.25rem" }}>
-            <div style={{ marginBottom:"1.25rem" }}>
-              <div style={{ fontWeight:700,fontSize:"0.85rem",marginBottom:"0.35rem" }}>Importar Agendas</div>
-              <div style={{ fontSize:"0.78rem",color:"#6b7a99",lineHeight:1.6 }}>
-                Faça upload das agendas dos <strong style={{color:"#94a3b8"}}>terapeutas</strong> e das <strong style={{color:"#94a3b8"}}>crianças</strong> juntas. A IA cruza os dados, detecta horários livres e cria pendências automaticamente para crianças sem terapeuta.
-              </div>
-            </div>
-
-            {/* Legend */}
-            <div style={{ display:"flex",gap:"0.6rem",marginBottom:"1rem",flexWrap:"wrap" }}>
-              {[
-                { color:"#16a34a", label:"Terapeuta livre" },
-                { color:"#6366f1", label:"Livre por TO/Psico" },
-                { color:"#f59e0b", label:"Pendência auto" },
-              ].map(({ color, label })=>(
-                <div key={label} style={{ display:"flex",alignItems:"center",gap:"0.35rem",fontSize:"0.7rem",color:"#94a3b8" }}>
-                  <div style={{ width:"8px",height:"8px",borderRadius:"50%",background:color,flexShrink:0 }} />
-                  {label}
-                </div>
-              ))}
-            </div>
-
-            {/* Drop zone — mobile friendly */}
-            {!uploading ? (
-              <div style={{ marginBottom:"1rem" }}>
-                {/* Hidden input — accepts images from gallery or files */}
-                <input ref={fileRef} type="file" accept="image/*,image/jpeg,image/png,image/heic,image/heif,.jpg,.jpeg,.png,.heic,.heif" multiple capture={false}
-                  style={{ display:"none" }} onChange={e=>handleFiles(e.target.files)} />
-
-                {/* Primary button — opens gallery on mobile */}
-                <button onClick={()=>fileRef.current.click()}
-                  style={{ width:"100%",padding:"1.1rem",background:"#1e2d45",border:"2px dashed #3b82f6",borderRadius:"14px",color:"#3b82f6",fontFamily:"'DM Sans',sans-serif",fontWeight:700,fontSize:"0.9rem",cursor:"pointer",marginBottom:"0.5rem",display:"flex",alignItems:"center",justifyContent:"center",gap:"0.5rem" }}>
-                  <span style={{fontSize:"1.4rem"}}>📂</span> Selecionar imagens
-                </button>
-
-                <div style={{ textAlign:"center",fontSize:"0.72rem",color:"#4a5a70" }}>
-                  Selecione uma ou mais fotos das agendas
-                </div>
-              </div>
-            ) : (
-              <div style={{ border:"2px dashed #2a3548",borderRadius:"14px",padding:"2rem 1rem",textAlign:"center",background:"#0d1420",marginBottom:"1rem" }}>
-                <div style={{ fontSize:"2rem",marginBottom:"0.5rem" }}>⏳</div>
-                <div style={{ fontWeight:600,fontSize:"0.875rem",color:"#e8f0fe",marginBottom:"0.25rem" }}>IA analisando e cruzando os dados...</div>
-                <div style={{ fontSize:"0.75rem",color:"#6b7a99" }}>Aguarde — pode levar alguns segundos</div>
-              </div>
-            )}
-
-            {uploadStatus && (
-              <div style={{ padding:"0.75rem 1rem",borderRadius:"10px",marginBottom:"1rem",
-                background:uploadStatus.ok?"#0a2010":"#2a0a0a",
-                border:`1px solid ${uploadStatus.ok?"#16a34a":"#dc2626"}`,
-                color:uploadStatus.ok?"#4ade80":"#f87171",fontSize:"0.82rem",fontWeight:500 }}>
-                {uploadStatus.message}
-              </div>
-            )}
-
-            {/* Preview */}
-            {uploadPreview && (
-              <div>
-                {/* Pending children detected */}
-                {uploadPreview.pendingChildren.length>0 && (
-                  <div style={{ background:"#1a1208",border:"1px solid #92400e",borderRadius:"10px",padding:"0.85rem 1rem",marginBottom:"1rem" }}>
-                    <div style={{ fontSize:"0.72rem",fontWeight:700,color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"0.6rem" }}>
-                      ⚠️ Crianças sem terapeuta detectadas
-                    </div>
-                    {(() => {
-                      const grouped = {};
-                      uploadPreview.pendingChildren.forEach(({ child, day, time, activity }) => {
-                        const key = `${child}||${day}`;
-                        if (!grouped[key]) grouped[key] = { child, day, times:[], activities:[] };
-                        grouped[key].times.push(time);
-                        grouped[key].activities.push(activity);
-                      });
-                      return Object.values(grouped).map((g,i)=>{
-                        g.times.sort();
-                        const timeStr = g.times.length===1 ? g.times[0] : `${g.times[0]} às ${g.times[g.times.length-1]}`;
-                        return (
-                          <div key={i} style={{ fontSize:"0.78rem",color:"#94a3b8",marginBottom:"0.4rem",paddingLeft:"0.5rem",borderLeft:"2px solid #f59e0b" }}>
-                            <span style={{ color:"#fcd34d",fontWeight:600 }}>{g.child}</span>
-                            {" — "}<span style={{ fontFamily:"'DM Mono',monospace",color:"#d97706" }}>{DAY_LABELS[g.day]} {timeStr}</span>
-                            <span style={{ color:"#78716c",marginLeft:"0.3rem" }}>({[...new Set(g.activities)].join(", ")})</span>
-                          </div>
-                        );
-                      });
-                    })()}
-                    <div style={{ fontSize:"0.7rem",color:"#78716c",marginTop:"0.6rem" }}>
-                      → Serão criadas automaticamente como substituições pendentes
-                    </div>
-                  </div>
-                )}
-
-                {/* Cross references */}
-                {uploadPreview.crossRefs.length>0 && (
-                  <div style={{ background:"#0d1a2e",border:"1px solid #2d3f6e",borderRadius:"10px",padding:"0.85rem 1rem",marginBottom:"1rem" }}>
-                    <div style={{ fontSize:"0.72rem",fontWeight:700,color:"#6366f1",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"0.6rem" }}>
-                      🔗 Liberados por TO / Psicoterapia
-                    </div>
-                    {uploadPreview.crossRefs.map((cr,i)=>(
-                      <div key={i} style={{ fontSize:"0.78rem",color:"#94a3b8",marginBottom:"0.4rem",paddingLeft:"0.5rem",borderLeft:"2px solid #6366f1" }}>
-                        <span style={{ color:"#e8f0fe",fontWeight:600 }}>{cr.therapist}</span>
-                        {" "}livre em{" "}
-                        <span style={{ fontFamily:"'DM Mono',monospace",color:"#818cf8" }}>{DAY_LABELS[cr.day]} {cr.time}</span>
-                        {" — "}<span style={{ color:"#a5b4fc" }}>{cr.child}</span> com{" "}
-                        <span style={{ color:"#6366f1",fontWeight:600 }}>{cr.activity}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Per-therapist preview */}
-                <div style={{ fontWeight:700,fontSize:"0.82rem",color:"#e8f0fe",marginBottom:"0.75rem" }}>
-  {uploadPreview.therapists.length > 0 ? `${uploadPreview.therapists.length} terapeuta(s) — revise e confirme:` : "Agendas de crianças detectadas — confirme para importar atividades:"}
-                </div>
-                {uploadPreview.therapists.map((t,i)=>{
-                  const totalFree = DAYS.reduce((acc,d)=>acc+(t.freeSlots[d]||[]).length,0);
-                  const specCount = DAYS.reduce((acc,d)=>acc+(t.freeSlots[d]||[]).filter(s=>s.reason==="specialist").length,0);
-                  const absentDays = t.absentDays||[];
-                  return (
-                    <div key={i} style={{ background:"#0d1420",border:"1px solid #2a3548",borderRadius:"10px",padding:"0.85rem 1rem",marginBottom:"0.6rem" }}>
-                      <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"0.6rem" }}>
-                        <div style={{ fontWeight:600,fontSize:"0.875rem",color:"#3b82f6" }}>{t.name}</div>
-                        <div style={{ display:"flex",gap:"0.35rem",flexWrap:"wrap",justifyContent:"flex-end",maxWidth:"55%" }}>
-                          {absentDays.length>0&&<span style={{ fontSize:"0.68rem",background:"#2a0a0a",color:"#f87171",borderRadius:"5px",padding:"0.12rem 0.45rem",fontWeight:600 }}>⛔ {absentDays.map(d=>DAY_LABELS[d]||d).join(", ")}</span>}
-                          {totalFree>0&&<span style={{ fontSize:"0.68rem",background:"#0a2010",color:"#4ade80",borderRadius:"5px",padding:"0.12rem 0.45rem",fontWeight:600 }}>{totalFree} livre{totalFree!==1?"s":""}</span>}
-                          {specCount>0&&<span style={{ fontSize:"0.68rem",background:"#1a1040",color:"#a5b4fc",borderRadius:"5px",padding:"0.12rem 0.45rem",fontWeight:600 }}>↗ {specCount} especialista</span>}
-                        </div>
-                      </div>
-                      {absentDays.length>0&&(
-                        <div style={{ fontSize:"0.72rem",color:"#f87171",background:"#1a0808",borderRadius:"6px",padding:"0.3rem 0.6rem",marginBottom:"0.5rem",borderLeft:"2px solid #dc2626" }}>
-                          ⛔ Linha preta — ausente o dia todo em: {absentDays.map(d=>DAY_LABELS[d]||d).join(", ")}
-                        </div>
-                      )}
-                      <div style={{ display:"flex",flexWrap:"wrap",gap:"0.35rem" }}>
-                        {DAYS.map(day=>{
-                          const slots=t.freeSlots[day]||[];
-                          const isAbsent=absentDays.includes(day);
-                          if(isAbsent) return (
-                            <div key={day} style={{ background:"#1a0808",borderRadius:"6px",padding:"0.3rem 0.55rem",fontSize:"0.7rem",border:"1px solid #3d1515" }}>
-                              <span style={{ color:"#6b3333",fontWeight:600 }}>{DAY_LABELS[day]}: </span>
-                              <span style={{ color:"#f87171" }}>ausente</span>
-                            </div>
-                          );
-                          if(!slots.length) return null;
-                          return (
-                            <div key={day} style={{ background:"#141b26",borderRadius:"6px",padding:"0.3rem 0.55rem",fontSize:"0.7rem" }}>
-                              <span style={{ color:"#6b7a99",fontWeight:600 }}>{DAY_LABELS[day]}: </span>
-                              {slots.map((s,si)=>{
-                                const time=typeof s==="string"?s:s.time;
-                                const isSpec=s.reason==="specialist";
-                                return <span key={si} style={{ color:isSpec?"#a5b4fc":"#94a3b8",marginRight:"0.25rem" }}>{time}{isSpec?"✦":""}</span>;
-                              })}
-                            </div>
-                          );
-                        })}
-                        {absentDays.length===0&&DAYS.every(d=>(t.freeSlots[d]||[]).length===0)&&(
-                          <span style={{ color:"#f59e0b",fontSize:"0.75rem" }}>Nenhum horário livre</span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-
-                <div style={{ fontSize:"0.7rem",color:"#6366f1",marginBottom:"0.75rem" }}>✦ = livre por TO ou Psicoterapia</div>
-
-                <div style={{ display:"flex",gap:"0.5rem" }}>
-                  <button onClick={()=>setUploadPreview(null)} style={{ flex:1,padding:"0.65rem",background:"#1e2d45",border:"none",borderRadius:"8px",color:"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.875rem",cursor:"pointer" }}>Cancelar</button>
-                  <button onClick={confirmUpload} style={{ flex:1,padding:"0.65rem",background:"#16a34a",border:"none",borderRadius:"8px",color:"#fff",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.875rem",cursor:"pointer" }}>✅ Confirmar Importação</button>
-                </div>
-              </div>
-            )}
-
-            {!uploadPreview&&!uploading&&(
-              <div style={{ marginTop:"1.5rem" }}>
-                <div style={{ fontSize:"0.72rem",fontWeight:700,color:"#6b7a99",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"0.75rem" }}>Como funciona</div>
-                {[
-                  ["📸","Upload misturado","Suba PNGs de terapeutas e crianças juntos — a IA identifica cada tipo automaticamente"],
-                  ["🔗","Cruzamento de dados","Célula vazia = livre. \"Autocuidado (TO)\" / \"Hab. Sociais (Psicoterapia)\" = terapeuta liberado pelo especialista"],
-                  ["⚠️","Pendências automáticas","Se uma criança tem atividade mas nenhum terapeuta tem seu nome naquele slot → pendência criada automaticamente"],
-                  ["✅","Revise e confirme","Veja tudo antes de salvar — terapeutas livres + cruzamentos + pendências detectadas"],
-                ].map(([icon,title,desc],i)=>(
-                  <div key={i} style={{ display:"flex",gap:"0.75rem",padding:"0.75rem",background:"#0d1420",borderRadius:"10px",marginBottom:"0.5rem",border:"1px solid #1a2335" }}>
-                    <span style={{ fontSize:"1.2rem",flexShrink:0 }}>{icon}</span>
-                    <div>
-                      <div style={{ fontWeight:600,fontSize:"0.8rem",marginBottom:"0.2rem" }}>{title}</div>
-                      <div style={{ fontSize:"0.75rem",color:"#6b7a99",lineHeight:1.4 }}>{desc}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-
         {/* ── FALTAS ── */}
         {tab==="absent" && (
           <div style={{ padding:"1.25rem" }}>
-            <div style={{ marginBottom:"1.25rem" }}>
-              <div style={{ fontWeight:700,fontSize:"0.85rem",marginBottom:"0.35rem" }}>Registrar Faltas</div>
-              <div style={{ fontSize:"0.78rem",color:"#6b7a99",lineHeight:1.5 }}>
-                Selecione o dia e marque os terapeutas que faltaram. As crianças que eles atenderiam naquele dia viram substituições pendentes automaticamente.
-              </div>
-            </div>
-
-            {/* Day selector */}
+            <div style={{ fontWeight:700,fontSize:"0.85rem",marginBottom:"0.35rem" }}>Registrar Faltas</div>
+            <div style={{ fontSize:"0.78rem",color:"#6b7a99",lineHeight:1.5,marginBottom:"1.25rem" }}>Selecione o dia e marque quem faltou. As crianças daquele terapeuta viram pendências automaticamente.</div>
             <div style={{ display:"flex",gap:"0.4rem",marginBottom:"1.25rem",overflowX:"auto",paddingBottom:"0.25rem" }}>
               {DAYS.map(d=>(
-                <button key={d} onClick={()=>setAbsenceDay(d)} style={{
-                  flexShrink:0,padding:"0.45rem 0.75rem",borderRadius:"8px",border:"none",cursor:"pointer",
-                  background:absenceDay===d?"#dc2626":"#141b26",
-                  color:absenceDay===d?"#fff":"#6b7a99",
-                  fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.78rem"
-                }}>
-                  {DAY_LABELS[d]}
-                  {(absences[d]||[]).length>0&&<span style={{ marginLeft:"0.3rem",background:absenceDay===d?"rgba(255,255,255,0.25)":"#3d1515",borderRadius:"10px",padding:"0.05rem 0.35rem",fontSize:"0.65rem",color:absenceDay===d?"#fff":"#f87171" }}>{absences[d].length}</span>}
+                <button key={d} onClick={()=>setAbsenceDay(d)} style={{ flexShrink:0,padding:"0.45rem 0.75rem",borderRadius:"8px",border:"none",cursor:"pointer",background:absenceDay===d?"#dc2626":"#141b26",color:absenceDay===d?"#fff":"#6b7a99",fontFamily:"inherit",fontWeight:600,fontSize:"0.78rem" }}>
+                  {DAY_LABELS[d]}{(absences[d]||[]).length>0&&<span style={{ marginLeft:"0.3rem",background:absenceDay===d?"rgba(255,255,255,0.25)":"#3d1515",borderRadius:"10px",padding:"0.05rem 0.35rem",fontSize:"0.65rem",color:absenceDay===d?"#fff":"#f87171" }}>{absences[d].length}</span>}
                 </button>
               ))}
             </div>
 
-            {/* Therapist list to mark absent */}
-            <div style={{ marginBottom:"1.25rem" }}>
-              <div style={{ fontSize:"0.72rem",fontWeight:700,color:"#6b7a99",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"0.75rem" }}>
-                Terapeutas em {DAY_LABELS[absenceDay]}
-              </div>
-
-              {allTherapists.length === 0 ? (
-                <div style={{ textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"2rem 1rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548" }}>
-                  <div style={{ fontSize:"1.5rem",marginBottom:"0.5rem" }}>📋</div>
-                  Nenhum terapeuta importado ainda
-                  <div style={{ fontSize:"0.72rem",marginTop:"0.4rem",color:"#4a5a70" }}>Importe as agendas primeiro na aba 📋</div>
-                </div>
-              ) : (
-                <div>
-                  {allTherapists.map(name => {
-                    const isAbsent = (absences[absenceDay]||[]).includes(name);
-                    const daySchedule = (therapistSchedules[absenceDay]||[]).filter(s=>s.therapist.toLowerCase()===name.toLowerCase());
-                    return (
-                      <div key={name} style={{ marginBottom:"0.4rem" }}>
-                        <div onClick={()=>toggleAbsence(absenceDay, name)}
-                          style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0.65rem 1rem",borderRadius:isAbsent?"10px 10px 0 0":"10px",cursor:"pointer",
-                            background:isAbsent?"#2a0a0a":"#0d1420",
-                            border:`1px solid ${isAbsent?"#dc2626":"#1e2d45"}`,
-                            borderBottom:isAbsent?"1px solid #3d1010":undefined,
-                            transition:"all 0.15s" }}>
-                          <div>
-                            <div style={{ fontWeight:600,fontSize:"0.875rem",color:isAbsent?"#f87171":"#e8f0fe" }}>{name}</div>
-                            {daySchedule.length>0 && (
-                              <div style={{ fontSize:"0.72rem",color:"#6b7a99",marginTop:"0.15rem" }}>
-                                {daySchedule.length} criança{daySchedule.length!==1?"s":""}: {daySchedule.map(s=>s.child).join(", ")}
-                              </div>
-                            )}
-                            {daySchedule.length===0 && (
-                              <div style={{ fontSize:"0.72rem",color:"#4a5a70",marginTop:"0.15rem" }}>sem agenda nesse dia</div>
-                            )}
-                          </div>
-                          <div style={{ width:"22px",height:"22px",borderRadius:"6px",flexShrink:0,
-                            background:isAbsent?"#dc2626":"#1e2d45",
-                            border:`2px solid ${isAbsent?"#dc2626":"#2a3548"}`,
-                            display:"flex",alignItems:"center",justifyContent:"center",fontSize:"0.75rem" }}>
-                            {isAbsent?"✓":""}
-                          </div>
+            {/* Therapist absence list */}
+            <div style={{ fontSize:"0.72rem",fontWeight:700,color:"#6b7a99",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"0.75rem" }}>🧑‍⚕️ Terapeutas — {DAY_LABELS[absenceDay]}</div>
+            {allTherapists.length===0 ? <Empty icon="📋" text="Nenhum terapeuta importado ainda" sub="Importe as agendas na aba 📋" /> :
+              allTherapists.map(name => {
+                const isAbsent=(absences[absenceDay]||[]).includes(name);
+                const daySchedule=(schedules[absenceDay]||[]).filter(s=>s.therapist.toLowerCase()===name.toLowerCase());
+                const period=getPeriod(absenceDay,name);
+                return (
+                  <div key={name} style={{ marginBottom:"0.4rem" }}>
+                    <div onClick={()=>toggleAbsence(absenceDay,name)} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0.65rem 1rem",borderRadius:isAbsent?"10px 10px 0 0":"10px",cursor:"pointer",background:isAbsent?"#2a0a0a":"#0d1420",border:`1px solid ${isAbsent?"#dc2626":"#1e2d45"}`,borderBottom:isAbsent?"none":undefined }}>
+                      <div>
+                        <div style={{ fontWeight:600,fontSize:"0.875rem",color:isAbsent?"#f87171":"#e8f0fe" }}>{name}</div>
+                        <div style={{ fontSize:"0.72rem",color:"#6b7a99",marginTop:"0.15rem" }}>
+                          {daySchedule.length>0?`${daySchedule.length} criança(s): ${daySchedule.map(s=>s.child).join(", ")}`:"sem agenda nesse dia"}
                         </div>
-                        {isAbsent && (
-                          <div style={{ display:"flex",gap:"0",background:"#1a0808",border:"1px solid #dc2626",borderTop:"none",borderRadius:"0 0 10px 10px",overflow:"hidden" }}>
-                            {[["manha","☀️ Manhã"],["tarde","🌙 Tarde"],["integral","📅 Integral"]].map(([p,label])=>{
-                              const cur = absencePeriods[`${absenceDay}||${name}`]||"integral";
-                              return (
-                                <button key={p} onClick={e=>{e.stopPropagation();setAbsencePeriods(prev=>({...prev,[`${absenceDay}||${name}`]:p}));}}
-                                  style={{ flex:1,padding:"0.35rem 0.25rem",border:"none",borderRight:p!=="integral"?"1px solid #3d1010":"none",
-                                    background:cur===p?"#dc2626":"transparent",
-                                    color:cur===p?"#fff":"#9a6060",
-                                    fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.65rem",cursor:"pointer" }}>
-                                  {label}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Apply button */}
-            {(absences[absenceDay]||[]).length > 0 && (
-              <div>
-                <div style={{ background:"#2a0a0a",border:"1px solid #dc2626",borderRadius:"10px",padding:"0.75rem 1rem",marginBottom:"1rem" }}>
-                  <div style={{ fontSize:"0.78rem",fontWeight:600,color:"#f87171",marginBottom:"0.25rem" }}>
-                    ⛔ {absences[absenceDay].length} terapeuta(s) marcado(s) como faltante em {DAY_LABELS[absenceDay]}
+                      <div style={{ width:"22px",height:"22px",borderRadius:"6px",flexShrink:0,background:isAbsent?"#dc2626":"#1e2d45",border:`2px solid ${isAbsent?"#dc2626":"#2a3548"}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"0.75rem" }}>{isAbsent?"✓":""}</div>
+                    </div>
+                    {isAbsent && (
+                      <div style={{ display:"flex",background:"#1a0808",border:"1px solid #dc2626",borderTop:"none",borderRadius:"0 0 10px 10px",overflow:"hidden" }}>
+                        {[["manha","☀️ Manhã"],["tarde","🌙 Tarde"],["integral","📅 Integral"]].map(([p,label])=>(
+                          <button key={p} onClick={e=>{e.stopPropagation();setAbsencePeriods(prev=>({...prev,[`${absenceDay}||${name}`]:p}));}} style={{ flex:1,padding:"0.35rem 0.25rem",border:"none",borderRight:p!=="integral"?"1px solid #3d1010":"none",background:period===p?"#dc2626":"transparent",color:period===p?"#fff":"#9a6060",fontFamily:"inherit",fontWeight:600,fontSize:"0.65rem",cursor:"pointer" }}>{label}</button>
+                        ))}
+                      </div>
+                    )}
                   </div>
+                );
+              })
+            }
+
+            {(absences[absenceDay]||[]).length>0 && (
+              <div style={{ marginTop:"1rem" }}>
+                <div style={{ background:"#2a0a0a",border:"1px solid #dc2626",borderRadius:"10px",padding:"0.75rem 1rem",marginBottom:"1rem" }}>
+                  <div style={{ fontSize:"0.78rem",fontWeight:600,color:"#f87171",marginBottom:"0.25rem" }}>⛔ {absences[absenceDay].length} faltante(s) em {DAY_LABELS[absenceDay]}</div>
                   <div style={{ fontSize:"0.72rem",color:"#78716c" }}>
-                    {(() => {
-                      const affected = absences[absenceDay].flatMap(name =>
-                        (therapistSchedules[absenceDay]||[])
-                          .filter(s=>s.therapist.toLowerCase()===name.toLowerCase())
-                          .map(s=>s.child)
-                      );
-                      if (!affected.length) return "Nenhuma criança afetada (sem agenda registrada para esse dia)";
-                      return `Crianças afetadas: ${[...new Set(affected)].join(", ")}`;
+                    {(()=>{
+                      const affected=absences[absenceDay].flatMap(name=>(schedules[absenceDay]||[]).filter(s=>s.therapist.toLowerCase()===name.toLowerCase()).map(s=>s.child));
+                      return affected.length?`Crianças afetadas: ${[...new Set(affected)].join(", ")}`:"Nenhuma criança afetada (sem agenda registrada)";
                     })()}
                   </div>
                 </div>
-                <button onClick={()=>{
-                  const count = applyAbsences(absenceDay);
-                  if (count === 0) {
-                    alert("Nenhuma criança nova adicionada às pendências. Verifique se as agendas foram importadas.");
-                  } else {
-                    setTab("subs");
-                  }
-                }} style={{ width:"100%",padding:"0.75rem",background:"#dc2626",border:"none",borderRadius:"10px",color:"#fff",fontFamily:"'DM Sans',sans-serif",fontWeight:700,fontSize:"0.875rem",cursor:"pointer" }}>
-                  ⛔ Aplicar Faltas e Criar Pendências
-                </button>
-                <button onClick={()=>setAbsences(prev=>({...prev,[absenceDay]:[]}))}
-                  style={{ width:"100%",padding:"0.55rem",background:"none",border:"none",color:"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:500,fontSize:"0.78rem",cursor:"pointer",marginTop:"0.4rem" }}>
-                  Limpar seleção
-                </button>
+                <button onClick={()=>{ const c=applyAbsences(absenceDay); if(c===0){alert("Nenhuma criança nova. Verifique se as agendas foram importadas.");}else{setTab("subs");} }} style={{ width:"100%",padding:"0.75rem",background:"#dc2626",border:"none",borderRadius:"10px",color:"#fff",fontFamily:"inherit",fontWeight:700,fontSize:"0.875rem",cursor:"pointer" }}>⛔ Aplicar Faltas e Criar Pendências</button>
+                <button onClick={()=>setAbsences(prev=>({...prev,[absenceDay]:[]}))} style={{ width:"100%",padding:"0.55rem",background:"none",border:"none",color:"#6b7a99",fontFamily:"inherit",fontSize:"0.78rem",cursor:"pointer",marginTop:"0.4rem" }}>Limpar seleção</button>
               </div>
             )}
 
-            {/* ── FALTA DE CRIANÇAS ── */}
+            {/* Child absences */}
             <div style={{ marginTop:"2rem" }}>
-              <div style={{ fontSize:"0.72rem",fontWeight:700,color:"#6b7a99",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"0.75rem" }}>
-                👶 Faltas de Crianças em {DAY_LABELS[absenceDay]}
-              </div>
-              <div style={{ fontSize:"0.75rem",color:"#6b7a99",marginBottom:"0.75rem",lineHeight:1.5 }}>
-                Marque a criança ausente — o terapeuta fica livre naquele horário.
-              </div>
-
-              {(() => {
-                const childrenToday = [...new Set(
-                  (therapistSchedules[absenceDay] || []).map(s => s.child)
-                )].sort();
-
-                if (!childrenToday.length) return (
-                  <div style={{ textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"1.5rem 1rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548" }}>
-                    Nenhuma criança com agenda importada nesse dia
-                  </div>
-                );
-
-                return childrenToday.map(child => {
-                  const isAbsent = (childAbsences[absenceDay] || []).includes(child);
-                  const slots = (therapistSchedules[absenceDay] || []).filter(s => s.child === child);
-
+              <div style={{ fontSize:"0.72rem",fontWeight:700,color:"#6b7a99",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"0.75rem" }}>👶 Faltas de Crianças — {DAY_LABELS[absenceDay]}</div>
+              <div style={{ fontSize:"0.75rem",color:"#6b7a99",marginBottom:"0.75rem" }}>Marque a criança ausente — o terapeuta fica livre naquele horário.</div>
+              {(()=>{
+                const childrenToday=[...new Set((schedules[absenceDay]||[]).map(s=>s.child))].sort();
+                if(!childrenToday.length) return <Empty text="Nenhuma criança com agenda nesse dia" />;
+                return childrenToday.map(child=>{
+                  const isAbsent=(childAbsences[absenceDay]||[]).includes(child);
+                  const slots=(schedules[absenceDay]||[]).filter(s=>s.child===child);
                   return (
-                    <div key={child} onClick={() => {
-                      setChildAbsences(prev => {
-                        const current = prev[absenceDay] || [];
-                        const updated = current.includes(child)
-                          ? current.filter(n => n !== child)
-                          : [...current, child];
-
-                        if (!current.includes(child)) {
-                          setFreeSlots(prevSlots => {
-                            const newSlots = { ...prevSlots };
-                            slots.forEach(({ therapist, time }) => {
-                              const alreadyFree = (newSlots[absenceDay] || []).some(
-                                s => s.therapist === therapist && s.time === time
-                              );
-                              if (!alreadyFree) {
-                                newSlots[absenceDay] = [
-                                  ...(newSlots[absenceDay] || []),
-                                  { id: Date.now() + Math.random(), time, therapist, childAbsence: child }
-                                ];
-                              }
+                    <div key={child} onClick={()=>{
+                      setChildAbsences(prev=>{
+                        const cur=prev[absenceDay]||[];
+                        const updated=cur.includes(child)?cur.filter(n=>n!==child):[...cur,child];
+                        if(!cur.includes(child)){
+                          setFreeSlots(ps=>{
+                            const ns={...ps};
+                            slots.forEach(({therapist,time})=>{
+                              if(!(ns[absenceDay]||[]).some(s=>s.therapist===therapist&&s.time===time))
+                                ns[absenceDay]=[...(ns[absenceDay]||[]),{id:Date.now()+Math.random(),time,therapist,childAbsence:child}];
                             });
-                            newSlots[absenceDay].sort((a,b) => a.time.localeCompare(b.time));
-                            return newSlots;
+                            ns[absenceDay].sort((a,b)=>a.time.localeCompare(b.time));
+                            return ns;
                           });
                         } else {
-                          setFreeSlots(prevSlots => ({
-                            ...prevSlots,
-                            [absenceDay]: (prevSlots[absenceDay] || []).filter(
-                              s => s.childAbsence !== child
-                            )
-                          }));
+                          setFreeSlots(ps=>({...ps,[absenceDay]:(ps[absenceDay]||[]).filter(s=>s.childAbsence!==child)}));
                         }
-
-                        return { ...prev, [absenceDay]: updated };
+                        return {...prev,[absenceDay]:updated};
                       });
-                    }}
-                      style={{ display:"flex",alignItems:"center",justifyContent:"space-between",
-                        padding:"0.75rem 1rem",marginBottom:"0.4rem",borderRadius:"10px",cursor:"pointer",
-                        background:isAbsent?"#1a1208":"#0d1420",
-                        border:`1px solid ${isAbsent?"#f59e0b":"#1e2d45"}` }}>
+                    }} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0.75rem 1rem",marginBottom:"0.4rem",borderRadius:"10px",cursor:"pointer",background:isAbsent?"#1a1208":"#0d1420",border:`1px solid ${isAbsent?"#f59e0b":"#1e2d45"}` }}>
                       <div>
                         <div style={{ fontWeight:600,fontSize:"0.875rem",color:isAbsent?"#fcd34d":"#e8f0fe" }}>{child}</div>
-                        <div style={{ fontSize:"0.72rem",color:"#6b7a99",marginTop:"0.15rem" }}>
-                          {slots.map(s=>`${s.time} com ${s.therapist}`).join(" · ")}
-                        </div>
+                        <div style={{ fontSize:"0.72rem",color:"#6b7a99",marginTop:"0.15rem" }}>{slots.map(s=>`${s.time} com ${s.therapist}`).join(" · ")}</div>
                       </div>
-                      <div style={{ width:"22px",height:"22px",borderRadius:"6px",flexShrink:0,
-                        background:isAbsent?"#f59e0b":"#1e2d45",
-                        border:`2px solid ${isAbsent?"#f59e0b":"#2a3548"}`,
-                        display:"flex",alignItems:"center",justifyContent:"center",fontSize:"0.75rem",color:"#000" }}>
-                        {isAbsent?"✓":""}
-                      </div>
+                      <div style={{ width:"22px",height:"22px",borderRadius:"6px",flexShrink:0,background:isAbsent?"#f59e0b":"#1e2d45",border:`2px solid ${isAbsent?"#f59e0b":"#2a3548"}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"0.75rem",color:"#000" }}>{isAbsent?"✓":""}</div>
                     </div>
                   );
                 });
@@ -1368,104 +733,142 @@ Regras finais:
           </div>
         )}
 
+        {/* ── IMPORTAR ── */}
+        {tab==="upload" && (
+          <div style={{ padding:"1.25rem" }}>
+            <div style={{ fontWeight:700,fontSize:"0.85rem",marginBottom:"0.35rem" }}>Importar Agendas</div>
+            <div style={{ fontSize:"0.78rem",color:"#6b7a99",lineHeight:1.6,marginBottom:"1rem" }}>
+              Faça upload das agendas dos <strong style={{color:"#94a3b8"}}>terapeutas</strong> e das <strong style={{color:"#94a3b8"}}>crianças</strong> juntas. A IA cruza os dados, detecta horários livres e cria pendências automaticamente.
+            </div>
+            <div style={{ display:"flex",gap:"0.6rem",marginBottom:"1rem",flexWrap:"wrap" }}>
+              {[["#16a34a","Terapeuta livre"],["#6366f1","Livre por TO/Psico"],["#f59e0b","Pendência auto"],["#dc2626","Linha preta/AT (ausente)"]].map(([color,label])=>(
+                <div key={label} style={{ display:"flex",alignItems:"center",gap:"0.35rem",fontSize:"0.7rem",color:"#94a3b8" }}>
+                  <div style={{ width:"8px",height:"8px",borderRadius:"50%",background:color,flexShrink:0 }} />
+                  {label}
+                </div>
+              ))}
+            </div>
+            {!uploading ? (
+              <div style={{ marginBottom:"1rem" }}>
+                <input ref={fileRef} type="file" accept="image/*" multiple style={{ display:"none" }} onChange={e=>handleFiles(e.target.files)} />
+                <button onClick={()=>fileRef.current.click()} style={{ width:"100%",padding:"1.1rem",background:"#1e2d45",border:"2px dashed #3b82f6",borderRadius:"14px",color:"#3b82f6",fontFamily:"inherit",fontWeight:700,fontSize:"0.9rem",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:"0.5rem",marginBottom:"0.5rem" }}>
+                  <span style={{fontSize:"1.4rem"}}>📂</span> Selecionar imagens das agendas
+                </button>
+                <div style={{ textAlign:"center",fontSize:"0.72rem",color:"#4a5a70" }}>Terapeutas + crianças juntos no mesmo upload</div>
+              </div>
+            ) : (
+              <div style={{ border:"2px dashed #2a3548",borderRadius:"14px",padding:"2rem 1rem",textAlign:"center",background:"#0d1420",marginBottom:"1rem" }}>
+                <div style={{ fontSize:"2rem",marginBottom:"0.5rem" }}>⏳</div>
+                <div style={{ fontWeight:600,fontSize:"0.875rem",color:"#e8f0fe",marginBottom:"0.25rem" }}>IA analisando as agendas...</div>
+                <div style={{ fontSize:"0.75rem",color:"#6b7a99" }}>Aguarde alguns segundos</div>
+              </div>
+            )}
+            {uploadStatus && (
+              <div style={{ padding:"0.75rem 1rem",borderRadius:"10px",marginBottom:"1rem",background:uploadStatus.ok?"#0a2010":"#2a0a0a",border:`1px solid ${uploadStatus.ok?"#16a34a":"#dc2626"}`,color:uploadStatus.ok?"#4ade80":"#f87171",fontSize:"0.82rem",fontWeight:500 }}>
+                {uploadStatus.message}
+              </div>
+            )}
+            {uploadPreview && (
+              <div>
+                {uploadPreview.pendingChildren.length>0 && (
+                  <div style={{ background:"#1a1208",border:"1px solid #92400e",borderRadius:"10px",padding:"0.85rem 1rem",marginBottom:"1rem" }}>
+                    <div style={{ fontSize:"0.72rem",fontWeight:700,color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"0.6rem" }}>⚠️ Crianças sem terapeuta</div>
+                    {(()=>{
+                      const grp={};
+                      uploadPreview.pendingChildren.forEach(({child,day,time})=>{
+                        const k=`${child}||${day}`;
+                        if(!grp[k]) grp[k]={child,day,times:[]};
+                        grp[k].times.push(time);
+                      });
+                      return Object.values(grp).map((g,i)=>{
+                        g.times.sort();
+                        return <div key={i} style={{fontSize:"0.78rem",color:"#94a3b8",marginBottom:"0.4rem",paddingLeft:"0.5rem",borderLeft:"2px solid #f59e0b"}}><span style={{color:"#fcd34d",fontWeight:600}}>{g.child}</span>{" — "}<span style={{fontFamily:"monospace",color:"#d97706"}}>{DAY_LABELS[g.day]} {g.times.length===1?g.times[0]:`${g.times[0]} às ${g.times[g.times.length-1]}`}</span></div>;
+                      });
+                    })()}
+                    <div style={{ fontSize:"0.7rem",color:"#78716c",marginTop:"0.6rem" }}>→ Serão criadas como substituições pendentes</div>
+                  </div>
+                )}
+                {uploadPreview.crossRefs.length>0 && (
+                  <div style={{ background:"#0d1a2e",border:"1px solid #2d3f6e",borderRadius:"10px",padding:"0.85rem 1rem",marginBottom:"1rem" }}>
+                    <div style={{ fontSize:"0.72rem",fontWeight:700,color:"#6366f1",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"0.6rem" }}>🔗 Liberados por TO/Psicoterapia</div>
+                    {uploadPreview.crossRefs.map((cr,i)=>(
+                      <div key={i} style={{fontSize:"0.78rem",color:"#94a3b8",marginBottom:"0.4rem",paddingLeft:"0.5rem",borderLeft:"2px solid #6366f1"}}>
+                        <span style={{color:"#e8f0fe",fontWeight:600}}>{cr.therapist}</span>{" livre em "}<span style={{fontFamily:"monospace",color:"#818cf8"}}>{DAY_LABELS[cr.day]} {cr.time}</span>{" — "}<span style={{color:"#a5b4fc"}}>{cr.child}</span>{" com "}<span style={{color:"#6366f1",fontWeight:600}}>{cr.activity}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div style={{ fontWeight:700,fontSize:"0.82rem",color:"#e8f0fe",marginBottom:"0.75rem" }}>{uploadPreview.therapists.length} terapeuta(s) — revise:</div>
+                {uploadPreview.therapists.map((t,i)=>{
+                  const totalFree=DAYS.reduce((a,d)=>a+(t.freeSlots[d]||[]).length,0);
+                  const specCount=DAYS.reduce((a,d)=>a+(t.freeSlots[d]||[]).filter(s=>s.reason==="specialist").length,0);
+                  const absentDays=t.absentDays||[];
+                  return (
+                    <div key={i} style={{ background:"#0d1420",border:"1px solid #2a3548",borderRadius:"10px",padding:"0.85rem 1rem",marginBottom:"0.6rem" }}>
+                      <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"0.6rem" }}>
+                        <div style={{ fontWeight:600,fontSize:"0.875rem",color:"#3b82f6" }}>{t.name}</div>
+                        <div style={{ display:"flex",gap:"0.35rem",flexWrap:"wrap",justifyContent:"flex-end" }}>
+                          {absentDays.length>0&&<span style={{fontSize:"0.68rem",background:"#2a0a0a",color:"#f87171",borderRadius:"5px",padding:"0.12rem 0.45rem",fontWeight:600}}>⛔ {absentDays.map(d=>DAY_LABELS[d]).join(", ")}</span>}
+                          {totalFree>0&&<span style={{fontSize:"0.68rem",background:"#0a2010",color:"#4ade80",borderRadius:"5px",padding:"0.12rem 0.45rem",fontWeight:600}}>{totalFree} livre{totalFree!==1?"s":""}</span>}
+                          {specCount>0&&<span style={{fontSize:"0.68rem",background:"#1a1040",color:"#a5b4fc",borderRadius:"5px",padding:"0.12rem 0.45rem",fontWeight:600}}>↗ {specCount} especialista</span>}
+                        </div>
+                      </div>
+                      <div style={{ display:"flex",flexWrap:"wrap",gap:"0.35rem" }}>
+                        {DAYS.map(day=>{
+                          const slots=t.freeSlots[day]||[];
+                          const isAbsent=absentDays.includes(day);
+                          if(isAbsent) return <div key={day} style={{background:"#1a0808",borderRadius:"6px",padding:"0.3rem 0.55rem",fontSize:"0.7rem",border:"1px solid #3d1515"}}><span style={{color:"#6b3333",fontWeight:600}}>{DAY_LABELS[day]}: </span><span style={{color:"#f87171"}}>ausente</span></div>;
+                          if(!slots.length) return null;
+                          return <div key={day} style={{background:"#141b26",borderRadius:"6px",padding:"0.3rem 0.55rem",fontSize:"0.7rem"}}><span style={{color:"#6b7a99",fontWeight:600}}>{DAY_LABELS[day]}: </span>{slots.map((s,si)=>{const time=typeof s==="string"?s:s.time;const isSpec=s.reason==="specialist";return <span key={si} style={{color:isSpec?"#a5b4fc":"#94a3b8",marginRight:"0.25rem"}}>{time}{isSpec?"✦":""}</span>;})}</div>;
+                        })}
+                        {absentDays.length===0&&DAYS.every(d=>(t.freeSlots[d]||[]).length===0)&&<span style={{color:"#f59e0b",fontSize:"0.75rem"}}>Nenhum horário livre</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+                <div style={{fontSize:"0.7rem",color:"#6366f1",marginBottom:"0.75rem"}}>✦ = livre por TO ou Psicoterapia</div>
+                <div style={{ display:"flex",gap:"0.5rem" }}>
+                  <button onClick={()=>setUploadPreview(null)} style={{flex:1,padding:"0.65rem",background:"#1e2d45",border:"none",borderRadius:"8px",color:"#6b7a99",fontFamily:"inherit",fontWeight:600,fontSize:"0.875rem",cursor:"pointer"}}>Cancelar</button>
+                  <button onClick={confirmUpload} style={{flex:1,padding:"0.65rem",background:"#16a34a",border:"none",borderRadius:"8px",color:"#fff",fontFamily:"inherit",fontWeight:600,fontSize:"0.875rem",cursor:"pointer"}}>✅ Confirmar Importação</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── CRIANÇAS ── */}
         {tab==="children" && (
           <div style={{ padding:"1.25rem" }}>
-            <div style={{ fontWeight:700,fontSize:"0.85rem",marginBottom:"0.35rem" }}>Agenda por Criança</div>
-            <div style={{ fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1.25rem",lineHeight:1.5 }}>
-              Veja todos os terapeutas de cada criança, por dia e horário.
-            </div>
-
-            {/* Search */}
-            <div style={{ position:"relative",marginBottom:"1rem" }}>
-              <input
-                value={childSearch}
-                onChange={e=>setChildSearch(e.target.value)}
-                placeholder="🔍  Buscar criança..."
-                style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"10px",
-                  padding:"0.65rem 0.9rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",
-                  fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box" }}
-              />
-              {childSearch && (
-                <button onClick={()=>setChildSearch("")}
-                  style={{ position:"absolute",right:"0.75rem",top:"50%",transform:"translateY(-50%)",
-                    background:"none",border:"none",color:"#6b7a99",cursor:"pointer",fontSize:"1rem" }}>✕</button>
-              )}
-            </div>
-
-            {/* Day selector */}
+            <div style={{ fontWeight:700,fontSize:"0.85rem",marginBottom:"1rem" }}>Agenda por Criança</div>
+            <input value={childSearch} onChange={e=>setChildSearch(e.target.value)} placeholder="🔍 Buscar criança..." style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"10px",padding:"0.65rem 0.9rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",fontFamily:"inherit",boxSizing:"border-box",marginBottom:"1rem" }} />
             <div style={{ display:"flex",gap:"0.4rem",marginBottom:"1.25rem",overflowX:"auto",paddingBottom:"0.25rem" }}>
-              {DAYS.map(d=>(
-                <button key={d} onClick={()=>setChildViewDay(d)} style={{
-                  flexShrink:0,padding:"0.45rem 0.75rem",borderRadius:"8px",border:"none",cursor:"pointer",
-                  background:childViewDay===d?"#7c3aed":"#141b26",
-                  color:childViewDay===d?"#fff":"#6b7a99",
-                  fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.78rem"
-                }}>{DAY_LABELS[d]}</button>
-              ))}
+              {DAYS.map(d=><button key={d} onClick={()=>setChildViewDay(d)} style={{ flexShrink:0,padding:"0.45rem 0.75rem",borderRadius:"8px",border:"none",cursor:"pointer",background:childViewDay===d?"#7c3aed":"#141b26",color:childViewDay===d?"#fff":"#6b7a99",fontFamily:"inherit",fontWeight:600,fontSize:"0.78rem" }}>{DAY_LABELS[d]}</button>)}
             </div>
-
-            {/* Children list */}
-            {(() => {
-              const slots = therapistSchedules[childViewDay] || [];
-              // Get all unique children
-              let allChildrenLocal = [...new Set(slots.map(s=>s.child))].sort();
-              // Apply search filter
-              if (childSearch.trim()) {
-                const q = childSearch.toLowerCase();
-                allChildrenLocal = allChildrenLocal.filter(c=>c.toLowerCase().includes(q));
-              }
-
-              if (!slots.length) return (
-                <div style={{ textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"2rem 1rem",
-                  background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548" }}>
-                  <div style={{ fontSize:"1.5rem",marginBottom:"0.5rem" }}>📋</div>
-                  Nenhuma agenda importada para {DAY_LABELS[childViewDay]}
-                  <div style={{ fontSize:"0.72rem",marginTop:"0.4rem",color:"#4a5a70" }}>Importe as agendas na aba 📋</div>
-                </div>
-              );
-
-              if (!allChildrenLocal.length) return (
-                <div style={{ textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"2rem 1rem",
-                  background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548" }}>
-                  Nenhuma criança encontrada para "{childSearch}"
-                </div>
-              );
-
-              return allChildrenLocal.map(child => {
-                const childSlots = slots
-                  .filter(s=>s.child===child)
-                  .sort((a,b)=>a.time.localeCompare(b.time));
-                const isAbsent = (childAbsences[childViewDay]||[]).includes(child);
-                // Unique therapists for this child today
-                const therapists = [...new Set(childSlots.map(s=>s.therapist))];
-                const multiTherapist = therapists.length > 1;
-
+            {(()=>{
+              const slots=schedules[childViewDay]||[];
+              let kids=[...new Set(slots.map(s=>s.child))].sort();
+              if(childSearch.trim()) kids=kids.filter(c=>c.toLowerCase().includes(childSearch.toLowerCase()));
+              if(!slots.length) return <Empty icon="📋" text={`Nenhuma agenda para ${DAY_LABELS[childViewDay]}`} sub="Importe as agendas na aba 📋" />;
+              if(!kids.length) return <Empty text={`Nenhuma criança encontrada para "${childSearch}"`} />;
+              return kids.map(child=>{
+                const cs=slots.filter(s=>s.child===child).sort((a,b)=>a.time.localeCompare(b.time));
+                const isAbsent=(childAbsences[childViewDay]||[]).includes(child);
                 return (
-                  <div key={child} style={{ background:"#0d1420",border:`1px solid ${isAbsent?"#92400e":multiTherapist?"#4c1d95":"#1e2d45"}`,
-                    borderLeft:`3px solid ${isAbsent?"#f59e0b":multiTherapist?"#7c3aed":"#2a3548"}`,
-                    borderRadius:"10px",padding:"0.85rem 1rem",marginBottom:"0.75rem" }}>
+                  <div key={child} style={{ background:"#0d1420",border:`1px solid ${isAbsent?"#92400e":"#1e2d45"}`,borderLeft:`3px solid ${isAbsent?"#f59e0b":"#2a3548"}`,borderRadius:"10px",padding:"0.85rem 1rem",marginBottom:"0.75rem" }}>
                     <div style={{ display:"flex",alignItems:"center",gap:"0.5rem",marginBottom:"0.6rem" }}>
-                      <span style={{ fontWeight:700,fontSize:"0.9rem",color:"#e8f0fe" }}>{child}</span>
-                      {isAbsent && <span style={{ fontSize:"0.65rem",background:"#451a03",color:"#fbbf24",borderRadius:"5px",padding:"0.1rem 0.4rem",fontWeight:600 }}>FALTOU</span>}
-                      {multiTherapist && !isAbsent && <span style={{ fontSize:"0.65rem",background:"#2e1065",color:"#a78bfa",borderRadius:"5px",padding:"0.1rem 0.4rem",fontWeight:600 }}>+{therapists.length} terapeutas</span>}
+                      <span style={{ fontWeight:700,fontSize:"0.9rem" }}>{child}</span>
+                      {isAbsent&&<span style={{fontSize:"0.65rem",background:"#451a03",color:"#fbbf24",borderRadius:"5px",padding:"0.1rem 0.4rem",fontWeight:600}}>FALTOU</span>}
                     </div>
-                    <div style={{ display:"flex",flexDirection:"column",gap:"0.35rem" }}>
-                      {childSlots.map((s,i)=>{
-                        const actEntry = (childActivities[childViewDay]||[]).find(a=>a.child===child&&a.time===s.time);
-                        const act = actEntry?.activity||"";
-                        return (
-                          <div key={i} style={{ display:"flex",alignItems:"center",gap:"0.5rem",flexWrap:"wrap" }}>
-                            <span style={{ fontFamily:"'DM Mono',monospace",fontSize:"0.78rem",color:"#3b82f6",
-                              background:"#1e2d45",borderRadius:"5px",padding:"0.12rem 0.45rem",
-                              minWidth:"52px",textAlign:"center",flexShrink:0 }}>{s.time}</span>
-                            <span style={{ fontSize:"0.82rem",color:"#cbd5e1",flexShrink:0 }}>{s.therapist}</span>
-                            {act&&<span style={{ fontSize:"0.72rem",color:"#a78bfa",background:"#1a0a2e",borderRadius:"5px",padding:"0.1rem 0.4rem" }}>{act}</span>}
-                          </div>
-                        );
-                      })}
-                    </div>
+                    {cs.map((s,i)=>{
+                      const actEntry=(childActivities[childViewDay]||[]).find(a=>a.child===child&&a.time===s.time);
+                      return (
+                        <div key={i} style={{ display:"flex",alignItems:"center",gap:"0.5rem",flexWrap:"wrap",marginBottom:"0.3rem" }}>
+                          <span style={{ fontFamily:"monospace",fontSize:"0.78rem",color:"#3b82f6",background:"#1e2d45",borderRadius:"5px",padding:"0.12rem 0.45rem",minWidth:"52px",textAlign:"center",flexShrink:0 }}>{s.time}</span>
+                          <span style={{ fontSize:"0.82rem",color:"#cbd5e1",flexShrink:0 }}>{s.therapist}</span>
+                          {actEntry?.activity&&<span style={{fontSize:"0.72rem",color:"#a78bfa",background:"#1a0a2e",borderRadius:"5px",padding:"0.1rem 0.4rem"}}>{actEntry.activity}</span>}
+                        </div>
+                      );
+                    })}
                   </div>
                 );
               });
@@ -1473,160 +876,22 @@ Regras finais:
           </div>
         )}
 
-
-
-
-        {/* DESLIGADAS */}
-        {tab==="discharged" && (
-          <div style={{ padding:"1.25rem" }}>
-            <div style={{ display:"flex",gap:"0.4rem",marginBottom:"1.25rem" }}>
-              {[["children","👶 Crianças"],["therapists","🧑‍⚕️ Terapeutas"]].map(([key,label])=>(
-                <button key={key} onClick={()=>setDischargeTab(key)} style={{
-                  flex:1,padding:"0.5rem",borderRadius:"8px",border:"none",cursor:"pointer",
-                  background:dischargeTab===key?"#3d2410":"#0d1420",
-                  color:dischargeTab===key?"#fb923c":"#6b7a99",
-                  fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.8rem",
-                  borderBottom:dischargeTab===key?"2px solid #f97316":"2px solid transparent"
-                }}>{label}</button>
-              ))}
-            </div>
-
-            {dischargeTab==="children" && (
-              <>
-                <div style={{ fontWeight:700,fontSize:"0.85rem",marginBottom:"0.35rem" }}>Crianças Desligadas</div>
-                <div style={{ fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1.25rem",lineHeight:1.5 }}>
-                  Informe o nome da criança desligada. Ela sai da agenda e os terapeutas ficam com horário livre.
-                </div>
-                <div style={{ display:"flex",gap:"0.5rem",marginBottom:"1.25rem" }}>
-                  <div style={{ flex:1 }}>
-                    <select value={dischargeInput} onChange={e=>setDischargeInput(e.target.value)}
-                      style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"10px",padding:"0.65rem 0.9rem",color:dischargeInput?"#e8f0fe":"#3a4a60",fontSize:"0.875rem",outline:"none",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box",cursor:"pointer" }}>
-                      <option value="">Selecionar criança...</option>
-                      {allChildren.filter(c=>!dischargedChildren.includes(c)).map(c=>(<option key={c} value={c}>{c}</option>))}
-                    </select>
-                  </div>
-                  <button onClick={()=>{ if(dischargeInput){ dischargeChild(dischargeInput); setDischargeInput(""); } }} disabled={!dischargeInput}
-                    style={{ padding:"0.65rem 1rem",background:dischargeInput?"#f97316":"#1e2d45",border:"none",borderRadius:"10px",color:dischargeInput?"#fff":"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:700,fontSize:"0.82rem",cursor:dischargeInput?"pointer":"not-allowed",flexShrink:0 }}>
-                    Desligar
-                  </button>
-                </div>
-                {dischargedChildren.length===0 ? (
-                  <div style={{ textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"2rem 1rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548" }}>
-                    <div style={{ fontSize:"1.5rem",marginBottom:"0.5rem" }}>🚪</div>
-                    Nenhuma criança desligada registrada
-                  </div>
-                ) : (
-                  <div>
-                    <div style={{ fontSize:"0.72rem",fontWeight:700,color:"#6b7a99",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"0.75rem" }}>{dischargedChildren.length} criança(s) desligada(s)</div>
-                    {dischargedChildren.map(child=>{
-                      const freedSlots=DAYS.flatMap(d=>(therapistSchedules[d]||[]).filter(s=>s.child===child).map(s=>({...s,day:d})));
-                      return (
-                        <div key={child} style={{ background:"#0d1420",border:"1px solid #7c2d12",borderLeft:"3px solid #f97316",borderRadius:"10px",padding:"0.85rem 1rem",marginBottom:"0.5rem",display:"flex",justifyContent:"space-between",alignItems:"flex-start" }}>
-                          <div>
-                            <div style={{ fontWeight:600,fontSize:"0.875rem",color:"#fed7aa",marginBottom:"0.2rem" }}>{child}</div>
-                            {freedSlots.length>0?(
-                              <div style={{ fontSize:"0.72rem",color:"#6b7a99" }}>
-                                {freedSlots.slice(0,3).map((s,i)=>(<span key={i} style={{marginRight:"0.5rem"}}>{DAY_LABELS[s.day]} {s.time} · {s.therapist}</span>))}
-                                {freedSlots.length>3&&<span style={{color:"#4a5a70"}}>+{freedSlots.length-3} mais</span>}
-                              </div>
-                            ):(
-                              <div style={{ fontSize:"0.72rem",color:"#4a5a70" }}>Terapeutas agora livres nos horários dessa criança</div>
-                            )}
-                          </div>
-                          <button onClick={()=>reactivateChild(child)} style={{ background:"#1e2d45",border:"none",borderRadius:"6px",color:"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.7rem",cursor:"pointer",padding:"0.3rem 0.6rem",flexShrink:0,marginLeft:"0.5rem" }}>
-                            ↩ Reativar
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </>
-            )}
-
-            {dischargeTab==="therapists" && (
-              <>
-                <div style={{ fontWeight:700,fontSize:"0.85rem",marginBottom:"0.35rem" }}>Terapeutas Desligados</div>
-                <div style={{ fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1.25rem",lineHeight:1.5 }}>
-                  Informe o terapeuta desligado. Os horários livres dele somem e as crianças que ele atendia viram pendência de substituição em todos os dias.
-                </div>
-                <div style={{ display:"flex",gap:"0.5rem",marginBottom:"1.25rem" }}>
-                  <div style={{ flex:1 }}>
-                    <select value={dischargeTherapistInput} onChange={e=>setDischargeTherapistInput(e.target.value)}
-                      style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"10px",padding:"0.65rem 0.9rem",color:dischargeTherapistInput?"#e8f0fe":"#3a4a60",fontSize:"0.875rem",outline:"none",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box",cursor:"pointer" }}>
-                      <option value="">Selecionar terapeuta...</option>
-                      {allTherapists.filter(t=>!dischargedTherapists.includes(t)).map(t=>(<option key={t} value={t}>{t}</option>))}
-                    </select>
-                  </div>
-                  <button onClick={()=>{ if(dischargeTherapistInput){ dischargeTherapist(dischargeTherapistInput); setDischargeTherapistInput(""); } }} disabled={!dischargeTherapistInput}
-                    style={{ padding:"0.65rem 1rem",background:dischargeTherapistInput?"#f97316":"#1e2d45",border:"none",borderRadius:"10px",color:dischargeTherapistInput?"#fff":"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:700,fontSize:"0.82rem",cursor:dischargeTherapistInput?"pointer":"not-allowed",flexShrink:0 }}>
-                    Desligar
-                  </button>
-                </div>
-                {dischargedTherapists.length===0 ? (
-                  <div style={{ textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"2rem 1rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548" }}>
-                    <div style={{ fontSize:"1.5rem",marginBottom:"0.5rem" }}>🚪</div>
-                    Nenhum terapeuta desligado registrado
-                  </div>
-                ) : (
-                  <div>
-                    <div style={{ fontSize:"0.72rem",fontWeight:700,color:"#6b7a99",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"0.75rem" }}>{dischargedTherapists.length} terapeuta(s) desligado(s)</div>
-                    {dischargedTherapists.map(name=>{
-                      const affectedChildren=[...new Set(DAYS.flatMap(d=>(therapistSchedules[d]||[]).filter(s=>s.therapist.toLowerCase()===name.toLowerCase()).map(s=>s.child)))];
-                      const pendCount = subs.filter(s=>s.dischargedTherapist===name && s.status==="Pending").length;
-                      return (
-                        <div key={name} style={{ background:"#0d1420",border:"1px solid #7c2d12",borderLeft:"3px solid #f97316",borderRadius:"10px",padding:"0.85rem 1rem",marginBottom:"0.5rem",display:"flex",justifyContent:"space-between",alignItems:"flex-start" }}>
-                          <div>
-                            <div style={{ fontWeight:600,fontSize:"0.875rem",color:"#fed7aa",marginBottom:"0.2rem" }}>{name}</div>
-                            {affectedChildren.length>0?(
-                              <div style={{ fontSize:"0.72rem",color:"#6b7a99" }}>
-                                {affectedChildren.slice(0,3).join(", ")}
-                                {affectedChildren.length>3&&<span style={{color:"#4a5a70"}}> +{affectedChildren.length-3} mais</span>}
-                                {pendCount>0&&<span style={{color:"#f59e0b",marginLeft:"0.4rem"}}>· {pendCount} pendência(s) criadas</span>}
-                              </div>
-                            ):(
-                              <div style={{ fontSize:"0.72rem",color:"#4a5a70" }}>Sem agenda registrada</div>
-                            )}
-                          </div>
-                          <button onClick={()=>reactivateTherapist(name)} style={{ background:"#1e2d45",border:"none",borderRadius:"6px",color:"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.7rem",cursor:"pointer",padding:"0.3rem 0.6rem",flexShrink:0,marginLeft:"0.5rem" }}>
-                            ↩ Reativar
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        )}
-
         {/* ── ENTRADAS ── */}
         {tab==="entries" && (
           <div style={{ padding:"1.25rem" }}>
             <div style={{ fontWeight:700,fontSize:"0.85rem",marginBottom:"0.35rem" }}>Mapeamento de Entradas</div>
-            <div style={{ fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1.25rem",lineHeight:1.5 }}>
-              Veja o <strong style={{color:"#94a3b8"}}>horário de chegada</strong> de cada criança. Filtre por horário para ver quem chega naquele momento específico.
-            </div>
-            <div style={{ marginBottom:"1.25rem" }}>
-              <label style={{ display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.5rem" }}>Filtrar por horário de chegada</label>
-              <div style={{ display:"flex",gap:"0.4rem",flexWrap:"wrap" }}>
-                <button onClick={()=>setEntryTimeFilter("ALL")} style={{ padding:"0.4rem 0.75rem",borderRadius:"7px",border:`1px solid ${entryTimeFilter==="ALL"?"#34d399":"#2a3548"}`,background:entryTimeFilter==="ALL"?"#0a2e1a":"#0d1420",color:entryTimeFilter==="ALL"?"#34d399":"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.75rem",cursor:"pointer" }}>Todos</button>
-                {TIME_OPTIONS.map(t=>(
-                  <button key={t} onClick={()=>setEntryTimeFilter(t)} style={{ padding:"0.4rem 0.65rem",borderRadius:"7px",border:`1px solid ${entryTimeFilter===t?"#34d399":"#2a3548"}`,background:entryTimeFilter===t?"#0a2e1a":"#0d1420",color:entryTimeFilter===t?"#34d399":"#6b7a99",fontFamily:"'DM Mono',monospace",fontWeight:600,fontSize:"0.75rem",cursor:"pointer" }}>{t}</button>
-                ))}
-              </div>
+            <div style={{ fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1.25rem" }}>Horário de chegada de cada criança por dia.</div>
+            <div style={{ display:"flex",gap:"0.4rem",flexWrap:"wrap",marginBottom:"1.25rem" }}>
+              <button onClick={()=>setEntryFilter("ALL")} style={{ padding:"0.4rem 0.75rem",borderRadius:"7px",border:`1px solid ${entryFilter==="ALL"?"#34d399":"#2a3548"}`,background:entryFilter==="ALL"?"#0a2e1a":"#0d1420",color:entryFilter==="ALL"?"#34d399":"#6b7a99",fontFamily:"inherit",fontWeight:600,fontSize:"0.75rem",cursor:"pointer" }}>Todos</button>
+              {TIME_OPTIONS.map(t=><button key={t} onClick={()=>setEntryFilter(t)} style={{ padding:"0.4rem 0.65rem",borderRadius:"7px",border:`1px solid ${entryFilter===t?"#34d399":"#2a3548"}`,background:entryFilter===t?"#0a2e1a":"#0d1420",color:entryFilter===t?"#34d399":"#6b7a99",fontFamily:"monospace",fontWeight:600,fontSize:"0.75rem",cursor:"pointer" }}>{t}</button>)}
             </div>
             {DAYS.map(day=>{
-              const allSlots = therapistSchedules[day]||[];
-              // Compute each child's FIRST slot (arrival time)
-              const firstArrival = {};
-              allSlots.forEach(({child,time})=>{ if(!firstArrival[child]||time<firstArrival[child]) firstArrival[child]=time; });
-              // Filter: show only children whose arrival == selected time, or all if "ALL"
-              let entries = Object.entries(firstArrival).sort((a,b)=>a[1].localeCompare(b[1])||a[0].localeCompare(b[0]));
-              if(entryTimeFilter!=="ALL") entries=entries.filter(([,t])=>t===entryTimeFilter);
+              const allSlots=schedules[day]||[];
+              const first={};
+              allSlots.forEach(({child,time})=>{if(!first[child]||time<first[child])first[child]=time;});
+              let entries=Object.entries(first).sort((a,b)=>a[1].localeCompare(b[1])||a[0].localeCompare(b[0]));
+              if(entryFilter!=="ALL") entries=entries.filter(([,t])=>t===entryFilter);
               if(!entries.length) return null;
-              // Group by arrival time
               const byTime={};
               entries.forEach(([child,time])=>{ if(!byTime[time]) byTime[time]=[]; byTime[time].push(child); });
               return (
@@ -1634,12 +899,12 @@ Regras finais:
                   <div style={{ display:"flex",alignItems:"center",gap:"0.5rem",marginBottom:"0.6rem" }}>
                     <span style={{ fontSize:"0.72rem",fontWeight:700,color:"#34d399",background:"#0a2e1a",borderRadius:"6px",padding:"0.2rem 0.6rem",textTransform:"uppercase",letterSpacing:"0.07em" }}>{DAY_LABELS[day]}</span>
                     <span style={{ fontSize:"0.7rem",color:"#6b7a99" }}>{entries.length} criança(s)</span>
-                    <div style={{ flex:1,height:"1px",background:"#1e2d45" }}/>
+                    <div style={{ flex:1,height:"1px",background:"#1e2d45" }} />
                   </div>
                   {Object.entries(byTime).sort((a,b)=>a[0].localeCompare(b[0])).map(([time,children])=>(
                     <div key={time} style={{ marginBottom:"0.75rem" }}>
                       <div style={{ display:"flex",alignItems:"center",gap:"0.5rem",marginBottom:"0.35rem" }}>
-                        <span style={{ fontFamily:"'DM Mono',monospace",fontSize:"0.8rem",color:"#34d399",background:"#0a2e1a",borderRadius:"5px",padding:"0.12rem 0.5rem",flexShrink:0 }}>{time}</span>
+                        <span style={{ fontFamily:"monospace",fontSize:"0.8rem",color:"#34d399",background:"#0a2e1a",borderRadius:"5px",padding:"0.12rem 0.5rem",flexShrink:0 }}>{time}</span>
                         <span style={{ fontSize:"0.7rem",color:"#4a5a70" }}>Chegada</span>
                       </div>
                       {children.map(child=>(
@@ -1653,76 +918,47 @@ Regras finais:
                 </div>
               );
             })}
-            {DAYS.every(day=>{ const f={}; (therapistSchedules[day]||[]).forEach(({child,time})=>{if(!f[child]||time<f[child])f[child]=time;}); const e=Object.entries(f); return entryTimeFilter==="ALL"?!e.length:!e.some(([,t])=>t===entryTimeFilter); }) && (
-              <div style={{ textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"2rem 1rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548" }}>
-                <div style={{ fontSize:"1.5rem",marginBottom:"0.5rem" }}>🗺️</div>
-                {entryTimeFilter==="ALL"?"Nenhuma agenda importada ainda":`Nenhuma criança chega às ${entryTimeFilter}`}
-                {entryTimeFilter==="ALL"&&<div style={{ fontSize:"0.72rem",marginTop:"0.4rem",color:"#4a5a70" }}>Importe as agendas na aba 📋</div>}
-              </div>
+            {DAYS.every(day=>{const f={};(schedules[day]||[]).forEach(({child,time})=>{if(!f[child]||time<f[child])f[child]=time;});const e=Object.entries(f);return entryFilter==="ALL"?!e.length:!e.some(([,t])=>t===entryFilter);}) && (
+              <Empty icon="🗺️" text={entryFilter==="ALL"?"Nenhuma agenda importada ainda":`Nenhuma criança chega às ${entryFilter}`} sub={entryFilter==="ALL"?"Importe as agendas na aba 📋":undefined} />
             )}
           </div>
         )}
 
-        {/* ── AGENDA TERAPEUTAS ── */}
+        {/* ── AGENDA ── */}
         {tab==="agenda" && (
           <div style={{ padding:"1.25rem" }}>
-            <div style={{ fontWeight:700,fontSize:"0.85rem",marginBottom:"0.35rem" }}>Agenda dos Terapeutas</div>
-            <div style={{ fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1.25rem",lineHeight:1.5 }}>
-              Consulte quais crianças cada terapeuta atende por dia e horário.
-            </div>
-            <div style={{ position:"relative",marginBottom:"1rem" }}>
-              <input value={therapistAgendaFilter} onChange={e=>setTherapistAgendaFilter(e.target.value)}
-                placeholder="🔍  Buscar terapeuta..."
-                style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"10px",
-                  padding:"0.65rem 0.9rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",
-                  fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box" }} />
-              {therapistAgendaFilter&&<button onClick={()=>setTherapistAgendaFilter("")} style={{position:"absolute",right:"0.75rem",top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#6b7a99",cursor:"pointer",fontSize:"1rem"}}>✕</button>}
-            </div>
+            <div style={{ fontWeight:700,fontSize:"0.85rem",marginBottom:"1rem" }}>Agenda dos Terapeutas</div>
+            <input value={agendaFilter} onChange={e=>setAgendaFilter(e.target.value)} placeholder="🔍 Buscar terapeuta..." style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"10px",padding:"0.65rem 0.9rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",fontFamily:"inherit",boxSizing:"border-box",marginBottom:"1rem" }} />
             <div style={{ display:"flex",gap:"0.4rem",marginBottom:"1.25rem",overflowX:"auto",paddingBottom:"0.25rem" }}>
               {[["ALL","Todos"],...DAYS.map(d=>[d,DAY_LABELS[d]])].map(([key,label])=>(
-                <button key={key} onClick={()=>setTherapistAgendaDay(key)} style={{
-                  flexShrink:0,padding:"0.45rem 0.75rem",borderRadius:"8px",border:"none",cursor:"pointer",
-                  background:therapistAgendaDay===key?"#2563eb":"#141b26",
-                  color:therapistAgendaDay===key?"#fff":"#6b7a99",
-                  fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.75rem"
-                }}>{label}</button>
+                <button key={key} onClick={()=>setAgendaDay(key)} style={{ flexShrink:0,padding:"0.45rem 0.75rem",borderRadius:"8px",border:"none",cursor:"pointer",background:agendaDay===key?"#2563eb":"#141b26",color:agendaDay===key?"#fff":"#6b7a99",fontFamily:"inherit",fontWeight:600,fontSize:"0.75rem" }}>{label}</button>
               ))}
             </div>
             {(()=>{
-              const daysToShow = therapistAgendaDay==="ALL" ? DAYS : [therapistAgendaDay];
-              const allT = [...new Set(DAYS.flatMap(d=>(therapistSchedules[d]||[]).map(s=>s.therapist)))].sort();
-              const filtered = therapistAgendaFilter ? allT.filter(n=>n.toLowerCase().includes(therapistAgendaFilter.toLowerCase())) : allT;
-              if(!allT.length) return (
-                <div style={{textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"2rem 1rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548"}}>
-                  <div style={{fontSize:"1.5rem",marginBottom:"0.5rem"}}>📅</div>
-                  Nenhuma agenda importada ainda
-                  <div style={{fontSize:"0.72rem",marginTop:"0.4rem",color:"#4a5a70"}}>Importe as agendas na aba 📋</div>
-                </div>
-              );
-              if(!filtered.length) return (
-                <div style={{textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"1.5rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548"}}>
-                  Nenhum resultado para "{therapistAgendaFilter}"
-                </div>
-              );
+              const daysToShow=agendaDay==="ALL"?DAYS:[agendaDay];
+              const allT=[...new Set(DAYS.flatMap(d=>(schedules[d]||[]).map(s=>s.therapist)))].sort();
+              const filtered=agendaFilter?allT.filter(n=>n.toLowerCase().includes(agendaFilter.toLowerCase())):allT;
+              if(!allT.length) return <Empty icon="📅" text="Nenhuma agenda importada ainda" sub="Importe as agendas na aba 📋" />;
+              if(!filtered.length) return <Empty text={`Nenhum resultado para "${agendaFilter}"`} />;
               return filtered.map(name=>{
-                const hasAny = daysToShow.some(d=>(therapistSchedules[d]||[]).some(s=>s.therapist===name));
+                const hasAny=daysToShow.some(d=>(schedules[d]||[]).some(s=>s.therapist===name));
                 if(!hasAny) return null;
                 return (
-                  <div key={name} style={{background:"#0d1420",border:"1px solid #1e2d45",borderLeft:"3px solid #2563eb",borderRadius:"10px",padding:"0.85rem 1rem",marginBottom:"0.75rem"}}>
-                    <div style={{fontWeight:700,fontSize:"0.9rem",color:"#60a5fa",marginBottom:"0.75rem"}}>{name}</div>
+                  <div key={name} style={{ background:"#0d1420",border:"1px solid #1e2d45",borderLeft:"3px solid #2563eb",borderRadius:"10px",padding:"0.85rem 1rem",marginBottom:"0.75rem" }}>
+                    <div style={{ fontWeight:700,fontSize:"0.9rem",color:"#60a5fa",marginBottom:"0.75rem" }}>{name}</div>
                     {daysToShow.map(day=>{
-                      const slots=(therapistSchedules[day]||[]).filter(s=>s.therapist===name).sort((a,b)=>a.time.localeCompare(b.time));
+                      const slots=(schedules[day]||[]).filter(s=>s.therapist===name).sort((a,b)=>a.time.localeCompare(b.time));
                       if(!slots.length) return null;
                       return (
-                        <div key={day} style={{marginBottom:"0.6rem"}}>
-                          {therapistAgendaDay==="ALL"&&<div style={{fontSize:"0.7rem",fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"0.4rem"}}>{DAY_LABELS[day]}</div>}
+                        <div key={day} style={{ marginBottom:"0.6rem" }}>
+                          {agendaDay==="ALL"&&<div style={{ fontSize:"0.7rem",fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"0.4rem" }}>{DAY_LABELS[day]}</div>}
                           {slots.map((s,i)=>{
-                            const actEntry=(childActivities[day]||[]).find(a=>a.child===s.child&&a.therapist===name&&a.time===s.time);
+                            const act=(childActivities[day]||[]).find(a=>a.child===s.child&&a.therapist===name&&a.time===s.time);
                             return (
-                              <div key={i} style={{display:"flex",alignItems:"center",gap:"0.5rem",marginBottom:"0.3rem",flexWrap:"wrap"}}>
-                                <span style={{fontFamily:"'DM Mono',monospace",fontSize:"0.78rem",color:"#3b82f6",background:"#1e2d45",borderRadius:"5px",padding:"0.12rem 0.45rem",minWidth:"52px",textAlign:"center",flexShrink:0}}>{s.time}</span>
-                                <span style={{fontSize:"0.82rem",color:"#e8f0fe",flexShrink:0}}>{s.child}</span>
-                                {actEntry?.activity&&<span style={{fontSize:"0.7rem",color:"#a78bfa",background:"#1a0a2e",borderRadius:"5px",padding:"0.1rem 0.4rem"}}>{actEntry.activity}</span>}
+                              <div key={i} style={{ display:"flex",alignItems:"center",gap:"0.5rem",marginBottom:"0.3rem",flexWrap:"wrap" }}>
+                                <span style={{ fontFamily:"monospace",fontSize:"0.78rem",color:"#3b82f6",background:"#1e2d45",borderRadius:"5px",padding:"0.12rem 0.45rem",minWidth:"52px",textAlign:"center",flexShrink:0 }}>{s.time}</span>
+                                <span style={{ fontSize:"0.82rem",color:"#e8f0fe",flexShrink:0 }}>{s.child}</span>
+                                {act?.activity&&<span style={{ fontSize:"0.7rem",color:"#a78bfa",background:"#1a0a2e",borderRadius:"5px",padding:"0.1rem 0.4rem" }}>{act.activity}</span>}
                               </div>
                             );
                           })}
@@ -1736,92 +972,52 @@ Regras finais:
           </div>
         )}
 
-        {/* ── HABILIDADES ── */}
-        {tab==="skills" && (
+        {/* ── DESLIGAMENTOS ── */}
+        {tab==="discharged" && (
           <div style={{ padding:"1.25rem" }}>
-            <div style={{ fontWeight:700,fontSize:"0.85rem",marginBottom:"0.35rem" }}>Habilidades por Criança</div>
-            <div style={{ fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1.25rem",lineHeight:1.5 }}>
-              Atividades e habilidades de cada criança por dia e horário.
-            </div>
-            <div style={{ position:"relative",marginBottom:"1rem" }}>
-              <input value={skillsSearch} onChange={e=>setSkillsSearch(e.target.value)}
-                placeholder="🔍  Buscar criança..."
-                style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"10px",
-                  padding:"0.65rem 0.9rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",
-                  fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box" }} />
-              {skillsSearch&&<button onClick={()=>setSkillsSearch("")} style={{ position:"absolute",right:"0.75rem",top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#6b7a99",cursor:"pointer",fontSize:"1rem" }}>✕</button>}
-            </div>
-            <div style={{ display:"flex",gap:"0.4rem",marginBottom:"1.25rem",overflowX:"auto",paddingBottom:"0.25rem" }}>
-              {[["ALL","Todos"],...DAYS.map(d=>[d,DAY_LABELS[d]])].map(([key,label])=>(
-                <button key={key} onClick={()=>setSkillsDay(key)} style={{
-                  flexShrink:0,padding:"0.45rem 0.75rem",borderRadius:"8px",border:"none",cursor:"pointer",
-                  background:skillsDay===key?"#10b981":"#141b26",
-                  color:skillsDay===key?"#fff":"#6b7a99",
-                  fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.75rem"
-                }}>{label}</button>
+            <div style={{ display:"flex",gap:"0.4rem",marginBottom:"1.25rem" }}>
+              {[["children","👶 Crianças"],["therapists","🧑‍⚕️ Terapeutas"]].map(([key,label])=>(
+                <button key={key} onClick={()=>setDischargeTab(key)} style={{ flex:1,padding:"0.5rem",borderRadius:"8px",border:"none",cursor:"pointer",background:dischargeTab===key?"#3d2410":"#0d1420",color:dischargeTab===key?"#fb923c":"#6b7a99",fontFamily:"inherit",fontWeight:600,fontSize:"0.8rem",borderBottom:dischargeTab===key?"2px solid #f97316":"2px solid transparent" }}>{label}</button>
               ))}
             </div>
-            {(()=>{
-              const daysToShow = skillsDay==="ALL" ? DAYS : [skillsDay];
-              const byChild = {};
-              daysToShow.forEach(day=>{
-                (childActivities[day]||[]).forEach(e=>{
-                  if(!byChild[e.child]) byChild[e.child]={};
-                  if(!byChild[e.child][day]) byChild[e.child][day]=[];
-                  byChild[e.child][day].push({time:e.time,activity:e.activity,therapist:e.therapist});
-                });
-              });
-              let children = Object.keys(byChild).sort();
-              if(skillsSearch.trim()) children=children.filter(c=>c.toLowerCase().includes(skillsSearch.toLowerCase()));
-              const actStyle = act => {
-                if(!act) return {bg:"#1e2d45",color:"#6b7a99"};
-                const a=act.toLowerCase();
-                if(a.includes("fono")) return {bg:"#1a0a2e",color:"#a78bfa"};
-                if(a.includes("psicomotric")) return {bg:"#0a2e1a",color:"#34d399"};
-                if(a.includes("motora")) return {bg:"#0a1a2e",color:"#60a5fa"};
-                if(a.includes("autocuidado")) return {bg:"#2e1a0a",color:"#fb923c"};
-                if(a.includes("social")) return {bg:"#2e0a1a",color:"#f472b6"};
-                if(a.includes("academ")) return {bg:"#1a2e0a",color:"#a3e635"};
-                if(a.includes("psicoterap")) return {bg:"#2e2a0a",color:"#fbbf24"};
-                return {bg:"#1e2d45",color:"#94a3b8"};
-              };
-              if(!Object.keys(byChild).length) return (
-                <div style={{textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"2rem 1rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548"}}>
-                  <div style={{fontSize:"1.5rem",marginBottom:"0.5rem"}}>📋</div>
-                  Nenhuma atividade importada ainda
-                  <div style={{fontSize:"0.72rem",marginTop:"0.4rem",color:"#4a5a70"}}>Importe as agendas das crianças na aba 📋</div>
+            {dischargeTab==="children" && (
+              <>
+                <div style={{ fontWeight:700,fontSize:"0.85rem",marginBottom:"0.35rem" }}>Crianças Desligadas</div>
+                <div style={{ fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1.25rem" }}>A criança sai da agenda e os terapeutas ficam com horário livre.</div>
+                <div style={{ display:"flex",gap:"0.5rem",marginBottom:"1.25rem" }}>
+                  <select value={dischargeInput} onChange={e=>setDischargeInput(e.target.value)} style={{ flex:1,background:"#0d1420",border:"1px solid #2a3548",borderRadius:"10px",padding:"0.65rem 0.9rem",color:dischargeInput?"#e8f0fe":"#3a4a60",fontSize:"0.875rem",outline:"none",fontFamily:"inherit",cursor:"pointer" }}>
+                    <option value="">Selecionar criança...</option>
+                    {allChildren.filter(c=>!discharged.includes(c)).map(c=><option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <button onClick={()=>{if(dischargeInput){dischargeChild(dischargeInput);setDischargeInput("");}}} disabled={!dischargeInput} style={{ padding:"0.65rem 1rem",background:dischargeInput?"#f97316":"#1e2d45",border:"none",borderRadius:"10px",color:dischargeInput?"#fff":"#6b7a99",fontFamily:"inherit",fontWeight:700,fontSize:"0.82rem",cursor:dischargeInput?"pointer":"not-allowed",flexShrink:0 }}>Desligar</button>
                 </div>
-              );
-              if(!children.length) return (
-                <div style={{textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"1.5rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548"}}>
-                  Nenhum resultado para "{skillsSearch}"
+                {discharged.length===0?<Empty icon="🚪" text="Nenhuma criança desligada" />:discharged.map(child=>(
+                  <div key={child} style={{ background:"#0d1420",border:"1px solid #7c2d12",borderLeft:"3px solid #f97316",borderRadius:"10px",padding:"0.85rem 1rem",marginBottom:"0.5rem",display:"flex",justifyContent:"space-between",alignItems:"center" }}>
+                    <span style={{ fontWeight:600,color:"#fed7aa" }}>{child}</span>
+                    <button onClick={()=>reactivateChild(child)} style={{ background:"#1e2d45",border:"none",borderRadius:"6px",color:"#6b7a99",fontFamily:"inherit",fontWeight:600,fontSize:"0.7rem",cursor:"pointer",padding:"0.3rem 0.6rem" }}>↩ Reativar</button>
+                  </div>
+                ))}
+              </>
+            )}
+            {dischargeTab==="therapists" && (
+              <>
+                <div style={{ fontWeight:700,fontSize:"0.85rem",marginBottom:"0.35rem" }}>Terapeutas Desligados</div>
+                <div style={{ fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1.25rem" }}>Os horários livres somem e as crianças viram pendências de substituição.</div>
+                <div style={{ display:"flex",gap:"0.5rem",marginBottom:"1.25rem" }}>
+                  <select value={dischargeInputT} onChange={e=>setDischargeInputT(e.target.value)} style={{ flex:1,background:"#0d1420",border:"1px solid #2a3548",borderRadius:"10px",padding:"0.65rem 0.9rem",color:dischargeInputT?"#e8f0fe":"#3a4a60",fontSize:"0.875rem",outline:"none",fontFamily:"inherit",cursor:"pointer" }}>
+                    <option value="">Selecionar terapeuta...</option>
+                    {allTherapists.filter(t=>!dischargedT.includes(t)).map(t=><option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <button onClick={()=>{if(dischargeInputT){dischargeTherapist(dischargeInputT);setDischargeInputT("");}}} disabled={!dischargeInputT} style={{ padding:"0.65rem 1rem",background:dischargeInputT?"#f97316":"#1e2d45",border:"none",borderRadius:"10px",color:dischargeInputT?"#fff":"#6b7a99",fontFamily:"inherit",fontWeight:700,fontSize:"0.82rem",cursor:dischargeInputT?"pointer":"not-allowed",flexShrink:0 }}>Desligar</button>
                 </div>
-              );
-              return children.map(child=>(
-                <div key={child} style={{background:"#0d1420",border:"1px solid #1e2d45",borderLeft:"3px solid #10b981",borderRadius:"10px",padding:"0.85rem 1rem",marginBottom:"0.75rem"}}>
-                  <div style={{fontWeight:700,fontSize:"0.9rem",color:"#e8f0fe",marginBottom:"0.75rem"}}>{child}</div>
-                  {daysToShow.map(day=>{
-                    const slots=byChild[child]?.[day];
-                    if(!slots||!slots.length) return null;
-                    return (
-                      <div key={day} style={{marginBottom:"0.6rem"}}>
-                        {skillsDay==="ALL"&&<div style={{fontSize:"0.7rem",fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"0.4rem"}}>{DAY_LABELS[day]}</div>}
-                        {slots.sort((a,b)=>a.time.localeCompare(b.time)).map((s,i)=>{
-                          const c=actStyle(s.activity);
-                          return (
-                            <div key={i} style={{display:"flex",alignItems:"center",gap:"0.6rem",marginBottom:"0.35rem"}}>
-                              <span style={{fontFamily:"'DM Mono',monospace",fontSize:"0.78rem",color:"#3b82f6",background:"#1e2d45",borderRadius:"5px",padding:"0.12rem 0.45rem",minWidth:"52px",textAlign:"center",flexShrink:0}}>{s.time}</span>
-                              <span style={{fontSize:"0.78rem",background:c.bg,color:c.color,borderRadius:"6px",padding:"0.2rem 0.55rem",fontWeight:500,flexShrink:0}}>{s.activity||"—"}</span>
-                              {s.therapist&&<span style={{fontSize:"0.72rem",color:"#4a5a70"}}>{s.therapist}</span>}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })}
-                </div>
-              ));
-            })()}
+                {dischargedT.length===0?<Empty icon="🚪" text="Nenhum terapeuta desligado" />:dischargedT.map(name=>(
+                  <div key={name} style={{ background:"#0d1420",border:"1px solid #7c2d12",borderLeft:"3px solid #f97316",borderRadius:"10px",padding:"0.85rem 1rem",marginBottom:"0.5rem",display:"flex",justifyContent:"space-between",alignItems:"center" }}>
+                    <span style={{ fontWeight:600,color:"#fed7aa" }}>{name}</span>
+                    <button onClick={()=>reactivateTherapist(name)} style={{ background:"#1e2d45",border:"none",borderRadius:"6px",color:"#6b7a99",fontFamily:"inherit",fontWeight:600,fontSize:"0.7rem",cursor:"pointer",padding:"0.3rem 0.6rem" }}>↩ Reativar</button>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
         )}
 
@@ -1829,209 +1025,127 @@ Regras finais:
         {tab==="manage" && (
           <div style={{ padding:"1.25rem" }}>
             <div style={{ fontWeight:700,fontSize:"0.85rem",marginBottom:"0.35rem" }}>Gerenciar Cadastros</div>
-            <div style={{ fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1.25rem",lineHeight:1.5 }}>
-              Edite nomes de terapeutas ou remova desligados. Para <strong style={{color:"#94a3b8"}}>alterar agenda</strong>, reimporte na aba 📋.
-            </div>
+            <div style={{ fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1.25rem" }}>Edite nomes ou remova registros. Para alterar agenda, reimporte na aba 📋.</div>
             <div style={{ display:"flex",gap:"0.4rem",marginBottom:"1.25rem" }}>
               {[["therapists","🧑‍⚕️ Terapeutas"],["children","👶 Crianças"]].map(([key,label])=>(
-                <button key={key} onClick={()=>{setManageTab(key);setManageSearch("");}} style={{
-                  flex:1,padding:"0.5rem",borderRadius:"8px",border:"none",cursor:"pointer",
-                  background:manageTab===key?"#1e2d45":"#0d1420",
-                  color:manageTab===key?"#e8f0fe":"#6b7a99",
-                  fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.8rem",
-                  borderBottom:manageTab===key?"2px solid #64748b":"2px solid transparent"
-                }}>{label}</button>
+                <button key={key} onClick={()=>{setManageTab(key);setManageSearch("");}} style={{ flex:1,padding:"0.5rem",borderRadius:"8px",border:"none",cursor:"pointer",background:manageTab===key?"#1e2d45":"#0d1420",color:manageTab===key?"#e8f0fe":"#6b7a99",fontFamily:"inherit",fontWeight:600,fontSize:"0.8rem",borderBottom:manageTab===key?"2px solid #64748b":"2px solid transparent" }}>{label}</button>
               ))}
             </div>
-            <div style={{ position:"relative",marginBottom:"1rem" }}>
-              <input value={manageSearch} onChange={e=>setManageSearch(e.target.value)}
-                placeholder={`🔍  Buscar ${manageTab==="therapists"?"terapeuta":"criança"}...`}
-                style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"10px",
-                  padding:"0.65rem 0.9rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",
-                  fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box" }} />
-              {manageSearch&&<button onClick={()=>setManageSearch("")} style={{position:"absolute",right:"0.75rem",top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#6b7a99",cursor:"pointer",fontSize:"1rem"}}>✕</button>}
-            </div>
-            {manageTab==="therapists"&&(()=>{
-              const allT=[...new Set(DAYS.flatMap(d=>[...(freeSlots[d]||[]).map(s=>s.therapist),...(therapistSchedules[d]||[]).map(s=>s.therapist)]))].sort();
+            <input value={manageSearch} onChange={e=>setManageSearch(e.target.value)} placeholder={`🔍 Buscar ${manageTab==="therapists"?"terapeuta":"criança"}...`} style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"10px",padding:"0.65rem 0.9rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",fontFamily:"inherit",boxSizing:"border-box",marginBottom:"1rem" }} />
+            {manageTab==="therapists" && (()=>{
+              const allT=[...new Set(DAYS.flatMap(d=>[...(freeSlots[d]||[]).map(s=>s.therapist),...(schedules[d]||[]).map(s=>s.therapist)]))].sort();
               const filtered=manageSearch?allT.filter(n=>n.toLowerCase().includes(manageSearch.toLowerCase())):allT;
-              if(!allT.length) return <div style={{textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"2rem 1rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548"}}><div style={{fontSize:"1.5rem",marginBottom:"0.5rem"}}>📋</div>Nenhum terapeuta importado ainda</div>;
-              if(!filtered.length) return <div style={{textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"1.5rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548"}}>Nenhum resultado para "{manageSearch}"</div>;
-              return filtered.map(name=>{
-                const freeCount=DAYS.reduce((a,d)=>a+(freeSlots[d]||[]).filter(s=>s.therapist===name).length,0);
-                const schedCount=DAYS.reduce((a,d)=>a+(therapistSchedules[d]||[]).filter(s=>s.therapist===name).length,0);
-                return (
-                  <div key={name} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0.75rem 1rem",marginBottom:"0.4rem",borderRadius:"10px",background:"#0d1420",border:"1px solid #1e2d45"}}>
-                    <div>
-                      <div style={{fontWeight:600,fontSize:"0.875rem"}}>{name}</div>
-                      <div style={{fontSize:"0.72rem",color:"#6b7a99",marginTop:"0.15rem"}}>{freeCount} livre(s) · {schedCount} atendimento(s)/sem</div>
-                    </div>
-                    <div style={{display:"flex",gap:"0.35rem"}}>
-                      <Btn onClick={()=>setEditingTherapist({oldName:name,newName:name})} small color="#1e3a5f">✏️</Btn>
-                      <Btn onClick={()=>setConfirmRemove({type:"therapist",name})} small color="#3d1515">🗑</Btn>
-                    </div>
+              if(!allT.length) return <Empty icon="📋" text="Nenhum terapeuta importado" />;
+              if(!filtered.length) return <Empty text={`Nenhum resultado para "${manageSearch}"`} />;
+              return filtered.map(name=>(
+                <div key={name} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0.75rem 1rem",marginBottom:"0.4rem",borderRadius:"10px",background:"#0d1420",border:"1px solid #1e2d45" }}>
+                  <div>
+                    <div style={{ fontWeight:600,fontSize:"0.875rem" }}>{name}</div>
+                    <div style={{ fontSize:"0.72rem",color:"#6b7a99",marginTop:"0.15rem" }}>{DAYS.reduce((a,d)=>a+(freeSlots[d]||[]).filter(s=>s.therapist===name).length,0)} livre(s) · {DAYS.reduce((a,d)=>a+(schedules[d]||[]).filter(s=>s.therapist===name).length,0)} atend./sem</div>
                   </div>
-                );
-              });
+                  <div style={{ display:"flex",gap:"0.35rem" }}>
+                    <Btn onClick={()=>setEditingTherapist({oldName:name,newName:name})} small color="#1e3a5f">✏️</Btn>
+                    <Btn onClick={()=>setConfirmRemove({type:"therapist",name})} small color="#3d1515">🗑</Btn>
+                  </div>
+                </div>
+              ));
             })()}
-            {manageTab==="children"&&(()=>{
-              const allC=[...new Set(DAYS.flatMap(d=>(therapistSchedules[d]||[]).map(s=>s.child)))].sort();
+            {manageTab==="children" && (()=>{
+              const allC=[...new Set(DAYS.flatMap(d=>(schedules[d]||[]).map(s=>s.child)))].sort();
               const filtered=manageSearch?allC.filter(n=>n.toLowerCase().includes(manageSearch.toLowerCase())):allC;
-              if(!allC.length) return <div style={{textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"2rem 1rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548"}}><div style={{fontSize:"1.5rem",marginBottom:"0.5rem"}}>📋</div>Nenhuma criança importada ainda</div>;
-              if(!filtered.length) return <div style={{textAlign:"center",color:"#6b7a99",fontSize:"0.8rem",padding:"1.5rem",background:"#0d1420",borderRadius:"12px",border:"1px dashed #2a3548"}}>Nenhum resultado para "{manageSearch}"</div>;
-              return filtered.map(name=>{
-                const schedCount=DAYS.reduce((a,d)=>a+(therapistSchedules[d]||[]).filter(s=>s.child===name).length,0);
-                const pendCount=subs.filter(s=>s.patient.toLowerCase()===name.toLowerCase()&&s.status==="Pending").length;
-                const therapistList=[...new Set(DAYS.flatMap(d=>(therapistSchedules[d]||[]).filter(s=>s.child===name).map(s=>s.therapist)))];
-                return (
-                  <div key={name} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0.75rem 1rem",marginBottom:"0.4rem",borderRadius:"10px",background:"#0d1420",border:"1px solid #1e2d45"}}>
-                    <div style={{flex:1,minWidth:0,marginRight:"0.75rem"}}>
-                      <div style={{fontWeight:600,fontSize:"0.875rem"}}>{name}</div>
-                      <div style={{fontSize:"0.72rem",color:"#6b7a99",marginTop:"0.15rem"}}>
-                        {schedCount} horário(s) · {therapistList.length} terapeuta(s)
-                        {pendCount>0&&<span style={{color:"#f59e0b",marginLeft:"0.4rem"}}>· {pendCount} pendência(s)</span>}
-                      </div>
-                      <div style={{fontSize:"0.7rem",color:"#4a5a70",marginTop:"0.2rem",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{therapistList.join(", ")}</div>
-                    </div>
-                    <Btn onClick={()=>setConfirmRemove({type:"child",name})} small color="#3d1515">🗑</Btn>
+              if(!allC.length) return <Empty icon="📋" text="Nenhuma criança importada" />;
+              if(!filtered.length) return <Empty text={`Nenhum resultado para "${manageSearch}"`} />;
+              return filtered.map(name=>(
+                <div key={name} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0.75rem 1rem",marginBottom:"0.4rem",borderRadius:"10px",background:"#0d1420",border:"1px solid #1e2d45" }}>
+                  <div>
+                    <div style={{ fontWeight:600,fontSize:"0.875rem" }}>{name}</div>
+                    <div style={{ fontSize:"0.72rem",color:"#6b7a99",marginTop:"0.15rem" }}>{DAYS.reduce((a,d)=>a+(schedules[d]||[]).filter(s=>s.child===name).length,0)} horário(s)</div>
                   </div>
-                );
-              });
+                  <Btn onClick={()=>setConfirmRemove({type:"child",name})} small color="#3d1515">🗑</Btn>
+                </div>
+              ));
             })()}
-            <div style={{marginTop:"1.5rem",background:"#0d1420",border:"1px solid #1e2d45",borderRadius:"10px",padding:"0.85rem 1rem"}}>
-              <div style={{fontSize:"0.72rem",fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"0.5rem"}}>💡 Alterar agenda</div>
-              <div style={{fontSize:"0.75rem",color:"#6b7a99",lineHeight:1.5}}>Reimporte na aba <strong style={{color:"#94a3b8"}}>📋 Importar</strong> — os dados do terapeuta são substituídos automaticamente.</div>
-            </div>
           </div>
         )}
 
         {/* ── MODALS ── */}
-
-        {/* Designação Rápida */}
-        {showBulkModal && (
-          <Modal title="⚡ Designação Rápida" onClose={()=>setShowBulkModal(false)}>
-            <div style={{ fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1rem",lineHeight:1.5 }}>
-              Converte todas as pendências do paciente no intervalo para <strong style={{color:"#3b82f6"}}>Designada</strong>, ou cria uma nova entrada se não houver pendência.
-            </div>
-            <Field label="Paciente" value={bulkForm.patient} onChange={v=>setBulkForm(f=>({...f,patient:v}))} placeholder="Ex: Gael Tanan" />
-            <div style={{ display:"flex",gap:"0.75rem" }}>
-              <div style={{ flex:1 }}>
-                <label style={{ display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.4rem" }}>De</label>
-                <select value={bulkForm.timeFrom} onChange={e=>setBulkForm(f=>({...f,timeFrom:e.target.value}))}
-                  style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.6rem 0.8rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box",cursor:"pointer" }}>
-                  {TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
-              <div style={{ flex:1 }}>
-                <label style={{ display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.4rem" }}>Até</label>
-                <select value={bulkForm.timeTo} onChange={e=>setBulkForm(f=>({...f,timeTo:e.target.value}))}
-                  style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.6rem 0.8rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box",cursor:"pointer" }}>
-                  {TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
-            </div>
-            <div style={{ marginTop:"1rem" }}>
-              <label style={{ display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.4rem" }}>Feita por (terapeuta)</label>
-              <div style={{ position:"relative",marginBottom:"0.5rem" }}>
-                <input value={bulkTherapistSearch} onChange={e=>setBulkTherapistSearch(e.target.value)} placeholder="🔍  Filtrar terapeuta..."
-                  style={{ width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.55rem 2rem 0.55rem 0.8rem",color:"#e8f0fe",fontSize:"0.82rem",outline:"none",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box" }}/>
-                {bulkTherapistSearch&&<button onClick={()=>setBulkTherapistSearch("")} style={{position:"absolute",right:"0.6rem",top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#6b7a99",cursor:"pointer",fontSize:"0.9rem"}}>✕</button>}
-              </div>
-              <div style={{ maxHeight:"130px",overflowY:"auto",border:"1px solid #2a3548",borderRadius:"8px",background:"#0d1420",marginBottom:"0.35rem" }}>
-                {allTherapists.filter(n=>!bulkTherapistSearch||n.toLowerCase().includes(bulkTherapistSearch.toLowerCase())).map(name=>(
-                  <div key={name} onClick={()=>{ setBulkForm(f=>({...f,therapist:name})); setBulkTherapistSearch(""); }}
-                    style={{ padding:"0.5rem 0.85rem",cursor:"pointer",fontSize:"0.875rem",background:bulkForm.therapist===name?"#1e2d45":"transparent",color:bulkForm.therapist===name?"#3b82f6":"#cbd5e1",borderBottom:"1px solid #1a2335" }}>
-                    {name}
-                  </div>
-                ))}
-                {allTherapists.length===0&&<div style={{padding:"0.5rem 0.85rem",fontSize:"0.8rem",color:"#6b7a99"}}>Nenhum terapeuta importado</div>}
-              </div>
-              {bulkForm.therapist&&<div style={{ fontSize:"0.72rem",color:"#34d399" }}>✓ {bulkForm.therapist}</div>}
-            </div>
-            <SaveCancel onCancel={()=>setShowBulkModal(false)} onSave={saveBulk} />
-          </Modal>
-        )}
-
-        {/* Confirmação de limpeza */}
-        {showClearConfirm && (
-          <Modal title="⚠️ Confirmar limpeza" onClose={()=>setShowClearConfirm(null)}>
-            <div style={{ fontSize:"0.875rem",color:"#94a3b8",marginBottom:"1.25rem",lineHeight:1.6 }}>
-              {showClearConfirm==="designated" && "Remover todas as substituições designadas?"}
-              {showClearConfirm==="pending" && "Remover todas as substituições pendentes?"}
-              {showClearConfirm==="all" && <span style={{color:"#f87171"}}>Remover <strong>todas</strong> as substituições (designadas + pendentes)?</span>}
-            </div>
-            <div style={{ display:"flex",gap:"0.5rem" }}>
-              <button onClick={()=>setShowClearConfirm(null)} style={{ flex:1,padding:"0.65rem",background:"#1e2d45",border:"none",borderRadius:"8px",color:"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.875rem",cursor:"pointer" }}>Cancelar</button>
-              <button onClick={()=>clearSubs(showClearConfirm)} style={{ flex:1,padding:"0.65rem",background:"#dc2626",border:"none",borderRadius:"8px",color:"#fff",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.875rem",cursor:"pointer" }}>Confirmar</button>
-            </div>
-          </Modal>
-        )}
-
-        {/* Multi-slot modal */}
-        {showMultiSlotModal && (
-          <Modal title="⚡ Adicionar Múltiplos Horários" onClose={()=>setShowMultiSlotModal(false)}>
-            <div style={{fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1rem"}}>
-              Selecione o terapeuta e marque os horários disponíveis em <strong style={{color:"#94a3b8"}}>{DAY_LABELS[activeDay]}</strong>.
-            </div>
-            <Field label="Terapeuta" value={multiSlotForm.therapist} onChange={v=>setMultiSlotForm(f=>({...f,therapist:v}))} placeholder="Nome do terapeuta..." />
-            <div style={{marginBottom:"1rem"}}>
-              <label style={{display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.6rem"}}>Horários ({multiSlotForm.times.length} selecionados)</label>
-              <div style={{display:"flex",flexWrap:"wrap",gap:"0.4rem"}}>
-                {TIME_OPTIONS.map(t=>{
-                  const sel=multiSlotForm.times.includes(t);
-                  return (
-                    <button key={t} onClick={()=>setMultiSlotForm(f=>({...f,times:sel?f.times.filter(x=>x!==t):[...f.times,t]}))}
-                      style={{padding:"0.35rem 0.65rem",borderRadius:"7px",border:`1px solid ${sel?"#3b82f6":"#2a3548"}`,
-                        background:sel?"#1e2d45":"#0d1420",color:sel?"#3b82f6":"#6b7a99",
-                        fontFamily:"'DM Mono',sans-serif",fontSize:"0.78rem",cursor:"pointer",fontWeight:sel?600:400}}>
-                      {t}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            <SaveCancel onCancel={()=>setShowMultiSlotModal(false)} onSave={saveMultiSlot} />
-          </Modal>
-        )}
-
-        {editingTherapist && (
-          <Modal title="✏️ Editar Nome do Terapeuta" onClose={()=>setEditingTherapist(null)}>
-            <div style={{fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1rem"}}>Nome atual: <strong style={{color:"#94a3b8"}}>{editingTherapist.oldName}</strong></div>
-            <Field label="Novo nome" value={editingTherapist.newName} onChange={v=>setEditingTherapist(p=>({...p,newName:v}))} placeholder="Digite o nome correto..." />
-            <div style={{fontSize:"0.72rem",color:"#6b7a99",marginBottom:"1rem"}}>Será atualizado em todos os registros: horários livres, agendas, faltas e substituições.</div>
-            <SaveCancel onCancel={()=>setEditingTherapist(null)} onSave={()=>renameTherapist(editingTherapist.oldName,editingTherapist.newName)} />
-          </Modal>
-        )}
-
-        {confirmRemove && (
-          <Modal title={`⚠️ Remover ${confirmRemove.type==="therapist"?"Terapeuta":"Criança"}`} onClose={()=>setConfirmRemove(null)}>
-            <div style={{fontSize:"0.875rem",color:"#94a3b8",marginBottom:"0.5rem",lineHeight:1.6}}>
-              Remover <strong style={{color:"#e8f0fe"}}>{confirmRemove.name}</strong> de todos os registros?
-            </div>
-            <div style={{fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1.25rem",lineHeight:1.5}}>
-              {confirmRemove.type==="therapist"?"Serão removidos: horários livres, agendas e faltas registradas.":"Serão removidos: agendas, pendências de substituição e faltas registradas."}
-            </div>
-            <div style={{display:"flex",gap:"0.5rem"}}>
-              <button onClick={()=>setConfirmRemove(null)} style={{flex:1,padding:"0.65rem",background:"#1e2d45",border:"none",borderRadius:"8px",color:"#6b7a99",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.875rem",cursor:"pointer"}}>Cancelar</button>
-              <button onClick={()=>confirmRemove.type==="therapist"?removeTherapist(confirmRemove.name):removeChild(confirmRemove.name)} style={{flex:1,padding:"0.65rem",background:"#dc2626",border:"none",borderRadius:"8px",color:"#fff",fontFamily:"'DM Sans',sans-serif",fontWeight:600,fontSize:"0.875rem",cursor:"pointer"}}>Remover</button>
-            </div>
-          </Modal>
-        )}
-
         {showSubModal && (
           <Modal title={editingSub?"Editar Substituição":"Nova Substituição"} onClose={()=>setShowSubModal(false)}>
             <Field label="Paciente" value={subForm.patient} onChange={v=>setSubForm(f=>({...f,patient:v}))} placeholder="Ex: Gael Tanan" />
             <Field label="Horário" value={subForm.time} onChange={v=>setSubForm(f=>({...f,time:v}))} placeholder="Ex: 15h às 17h ou 16h" />
             <Field label="Terapeuta (opcional)" value={subForm.therapist} onChange={v=>setSubForm(f=>({...f,therapist:v}))} placeholder="Ex: Jennifer Felicio" />
-            <Dropdown label="Status" value={subForm.status} onChange={v=>setSubForm(f=>({...f,status:v}))} options={[{value:"Pending",label:"🟡 Pendente"},{value:"Designated",label:"🔵 Designada"}]} />
+            <DDrop label="Status" value={subForm.status} onChange={v=>setSubForm(f=>({...f,status:v}))} options={[{value:"Pending",label:"🟡 Pendente"},{value:"Designated",label:"🔵 Designada"}]} />
             <SaveCancel onCancel={()=>setShowSubModal(false)} onSave={saveSub} />
           </Modal>
         )}
-
         {showSlotModal && (
           <Modal title={editingSlot?"Editar Horário":"Novo Terapeuta Livre"} onClose={()=>setShowSlotModal(false)}>
-            <Dropdown label="Horário" value={slotForm.time} onChange={v=>setSlotForm(f=>({...f,time:v}))} options={TIME_OPTIONS.map(t=>({value:t,label:t}))} />
+            <DDrop label="Horário" value={slotForm.time} onChange={v=>setSlotForm(f=>({...f,time:v}))} options={TIME_OPTIONS.map(t=>({value:t,label:t}))} />
             <Field label="Terapeuta" value={slotForm.therapist} onChange={v=>setSlotForm(f=>({...f,therapist:v}))} placeholder="Ex: Isabella" />
             <SaveCancel onCancel={()=>setShowSlotModal(false)} onSave={saveSlot} />
+          </Modal>
+        )}
+        {showMultiSlot && (
+          <Modal title="⚡ Múltiplos Horários" onClose={()=>setShowMultiSlot(false)}>
+            <div style={{fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1rem"}}>Terapeuta em <strong style={{color:"#94a3b8"}}>{DAY_LABELS[activeDay]}</strong></div>
+            <Field label="Terapeuta" value={multiSlot.therapist} onChange={v=>setMultiSlot(f=>({...f,therapist:v}))} placeholder="Nome do terapeuta..." />
+            <div style={{marginBottom:"1rem"}}>
+              <label style={{display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.6rem"}}>Horários ({multiSlot.times.length} selecionados)</label>
+              <div style={{display:"flex",flexWrap:"wrap",gap:"0.4rem"}}>
+                {TIME_OPTIONS.map(t=>{const sel=multiSlot.times.includes(t);return <button key={t} onClick={()=>setMultiSlot(f=>({...f,times:sel?f.times.filter(x=>x!==t):[...f.times,t]}))} style={{padding:"0.35rem 0.65rem",borderRadius:"7px",border:`1px solid ${sel?"#3b82f6":"#2a3548"}`,background:sel?"#1e2d45":"#0d1420",color:sel?"#3b82f6":"#6b7a99",fontFamily:"monospace",fontSize:"0.78rem",cursor:"pointer",fontWeight:sel?600:400}}>{t}</button>;})}
+              </div>
+            </div>
+            <SaveCancel onCancel={()=>setShowMultiSlot(false)} onSave={saveMultiSlot} />
+          </Modal>
+        )}
+        {showBulk && (
+          <Modal title="⚡ Designação Rápida" onClose={()=>setShowBulk(false)}>
+            <div style={{fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1rem"}}>Converte pendências do paciente para Designada, ou cria nova entrada.</div>
+            <Field label="Paciente" value={bulkForm.patient} onChange={v=>setBulkForm(f=>({...f,patient:v}))} placeholder="Ex: Gael Tanan" />
+            <div style={{display:"flex",gap:"0.75rem",marginBottom:"1rem"}}>
+              <div style={{flex:1}}><label style={{display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.4rem"}}>De</label><select value={bulkForm.timeFrom} onChange={e=>setBulkForm(f=>({...f,timeFrom:e.target.value}))} style={{width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.6rem 0.8rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",fontFamily:"inherit",boxSizing:"border-box",cursor:"pointer"}}>{TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}</select></div>
+              <div style={{flex:1}}><label style={{display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.4rem"}}>Até</label><select value={bulkForm.timeTo} onChange={e=>setBulkForm(f=>({...f,timeTo:e.target.value}))} style={{width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.6rem 0.8rem",color:"#e8f0fe",fontSize:"0.875rem",outline:"none",fontFamily:"inherit",boxSizing:"border-box",cursor:"pointer"}}>{TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}</select></div>
+            </div>
+            <label style={{display:"block",fontSize:"0.7rem",fontWeight:600,color:"#6b7a99",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.4rem"}}>Terapeuta</label>
+            <input value={bulkSearch} onChange={e=>setBulkSearch(e.target.value)} placeholder="🔍 Filtrar..." style={{width:"100%",background:"#0d1420",border:"1px solid #2a3548",borderRadius:"8px",padding:"0.55rem 0.8rem",color:"#e8f0fe",fontSize:"0.82rem",outline:"none",fontFamily:"inherit",boxSizing:"border-box",marginBottom:"0.35rem"}} />
+            <div style={{maxHeight:"120px",overflowY:"auto",border:"1px solid #2a3548",borderRadius:"8px",background:"#0d1420",marginBottom:"0.5rem"}}>
+              {allTherapists.filter(n=>!bulkSearch||n.toLowerCase().includes(bulkSearch.toLowerCase())).map(name=>(
+                <div key={name} onClick={()=>{setBulkForm(f=>({...f,therapist:name}));setBulkSearch("");}} style={{padding:"0.5rem 0.85rem",cursor:"pointer",fontSize:"0.875rem",background:bulkForm.therapist===name?"#1e2d45":"transparent",color:bulkForm.therapist===name?"#3b82f6":"#cbd5e1",borderBottom:"1px solid #1a2335"}}>{name}</div>
+              ))}
+              {allTherapists.length===0&&<div style={{padding:"0.5rem 0.85rem",fontSize:"0.8rem",color:"#6b7a99"}}>Nenhum terapeuta importado</div>}
+            </div>
+            {bulkForm.therapist&&<div style={{fontSize:"0.72rem",color:"#34d399",marginBottom:"0.5rem"}}>✓ {bulkForm.therapist}</div>}
+            <SaveCancel onCancel={()=>setShowBulk(false)} onSave={saveBulk} />
+          </Modal>
+        )}
+        {showClearConfirm && (
+          <Modal title="⚠️ Confirmar limpeza" onClose={()=>setShowClearConfirm(null)}>
+            <div style={{fontSize:"0.875rem",color:"#94a3b8",marginBottom:"1.25rem",lineHeight:1.6}}>
+              {showClearConfirm==="designated"&&"Remover todas as substituições designadas?"}
+              {showClearConfirm==="pending"&&"Remover todas as substituições pendentes?"}
+              {showClearConfirm==="all"&&<span style={{color:"#f87171"}}>Remover <strong>todas</strong> as substituições?</span>}
+            </div>
+            <div style={{display:"flex",gap:"0.5rem"}}>
+              <button onClick={()=>setShowClearConfirm(null)} style={{flex:1,padding:"0.65rem",background:"#1e2d45",border:"none",borderRadius:"8px",color:"#6b7a99",fontFamily:"inherit",fontWeight:600,fontSize:"0.875rem",cursor:"pointer"}}>Cancelar</button>
+              <button onClick={()=>clearSubs(showClearConfirm)} style={{flex:1,padding:"0.65rem",background:"#dc2626",border:"none",borderRadius:"8px",color:"#fff",fontFamily:"inherit",fontWeight:600,fontSize:"0.875rem",cursor:"pointer"}}>Confirmar</button>
+            </div>
+          </Modal>
+        )}
+        {editingTherapist && (
+          <Modal title="✏️ Editar Terapeuta" onClose={()=>setEditingTherapist(null)}>
+            <div style={{fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1rem"}}>Nome atual: <strong style={{color:"#94a3b8"}}>{editingTherapist.oldName}</strong></div>
+            <Field label="Novo nome" value={editingTherapist.newName} onChange={v=>setEditingTherapist(p=>({...p,newName:v}))} placeholder="Digite o nome correto..." />
+            <SaveCancel onCancel={()=>setEditingTherapist(null)} onSave={()=>renameTherapist(editingTherapist.oldName,editingTherapist.newName)} />
+          </Modal>
+        )}
+        {confirmRemove && (
+          <Modal title={`⚠️ Remover ${confirmRemove.type==="therapist"?"Terapeuta":"Criança"}`} onClose={()=>setConfirmRemove(null)}>
+            <div style={{fontSize:"0.875rem",color:"#94a3b8",marginBottom:"0.5rem",lineHeight:1.6}}>Remover <strong style={{color:"#e8f0fe"}}>{confirmRemove.name}</strong> de todos os registros?</div>
+            <div style={{fontSize:"0.78rem",color:"#6b7a99",marginBottom:"1.25rem"}}>{confirmRemove.type==="therapist"?"Horários livres, agendas e faltas serão removidos.":"Agendas, pendências e faltas serão removidos."}</div>
+            <div style={{display:"flex",gap:"0.5rem"}}>
+              <button onClick={()=>setConfirmRemove(null)} style={{flex:1,padding:"0.65rem",background:"#1e2d45",border:"none",borderRadius:"8px",color:"#6b7a99",fontFamily:"inherit",fontWeight:600,fontSize:"0.875rem",cursor:"pointer"}}>Cancelar</button>
+              <button onClick={()=>confirmRemove.type==="therapist"?removeTherapist(confirmRemove.name):removeChild(confirmRemove.name)} style={{flex:1,padding:"0.65rem",background:"#dc2626",border:"none",borderRadius:"8px",color:"#fff",fontFamily:"inherit",fontWeight:600,fontSize:"0.875rem",cursor:"pointer"}}>Remover</button>
+            </div>
           </Modal>
         )}
       </div>
